@@ -1,0 +1,28 @@
+{
+  "expo": {
+    "name": "Zaavo",
+    "slug": "zaavo-customer",
+    "scheme": "zaavocustomer",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": true,
+    "splash": {
+      "backgroundColor": "#FAF8F5"
+    },
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.zaavo.customer"
+    },
+    "android": {
+      "package": "com.zaavo.customer",
+      "adaptiveIcon": {
+        "backgroundColor": "#FAF8F5"
+      }
+    },
+    "plugins": ["expo-router"],
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}
