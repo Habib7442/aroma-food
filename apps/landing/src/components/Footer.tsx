@@ -54,6 +54,8 @@ export function Footer() {
         {/* Brand Column */}
         <div className="flex flex-col justify-between">
           <div>
+            {/* Plain <a>, not <Link>: SmoothScroll intercepts native anchor clicks for hash targets */}
+            {/* eslint-disable-next-line @next/next/no-html-link-for-pages */}
             <a href="/#home" aria-label="Zaavo Home" className="inline-block">
               <Image
                 src="/brand/zaavo-wordmark-reversed.svg"

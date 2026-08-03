@@ -34,6 +34,8 @@ export function Header() {
       }`}
     >
       <Container className="flex h-16 items-center justify-between">
+        {/* Plain <a>, not <Link>: SmoothScroll intercepts native anchor clicks for hash targets */}
+        {/* eslint-disable-next-line @next/next/no-html-link-for-pages */}
         <a href="/#home" aria-label="Zaavo">
           <Image src="/brand/zaavo-wordmark-black.svg" alt="Zaavo" width={128} height={28} priority />
         </a>
@@ -50,6 +52,7 @@ export function Header() {
           ))}
         </nav>
 
+        {/* eslint-disable-next-line @next/next/no-html-link-for-pages -- see SmoothScroll note above */}
         <a
           href="/#download"
           className="rounded-full bg-primary px-5 py-2.5 font-display text-sm font-semibold text-on-primary transition-opacity hover:opacity-90"
