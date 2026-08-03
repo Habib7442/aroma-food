@@ -1,10 +1,13 @@
 import type { Metadata } from "next";
 import { LegalArticle } from "@/components/LegalArticle";
+import { buildMetadata } from "@/lib/seo";
 
-export const metadata: Metadata = {
-  title: "FSSAI Compliance — Zaavo",
-  description: "How Zaavo verifies food safety for restaurant partners.",
-};
+export const metadata: Metadata = buildMetadata({
+  title: "FSSAI Compliance — Zaavo Silchar",
+  description: "How Zaavo verifies food safety for restaurant partners in Silchar, Assam.",
+  path: "/fssai-compliance",
+  keywords: ["FSSAI licensed restaurants Silchar", "food safety Zaavo"],
+});
 
 const UPDATED = "August 3, 2026";
 

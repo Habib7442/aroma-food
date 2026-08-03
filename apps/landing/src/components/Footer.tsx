@@ -115,22 +115,22 @@ export function Footer() {
 
       {/* Trust Highlights Bar */}
       <div className="border-t border-emerald-900/60 bg-[#041209] py-6">
-        <Container className="grid grid-cols-1 gap-4 text-center sm:grid-cols-3 sm:text-left">
-          <div className="flex items-center justify-center gap-3 sm:justify-start">
+        <Container className="grid grid-cols-1 gap-4 text-left sm:grid-cols-3">
+          <div className="flex items-center justify-start gap-3">
             <span className="text-xl">⚡</span>
             <div>
               <p className="text-xs font-bold text-white">Express Delivery</p>
               <p className="text-[11px] text-[#87b48b]">Under 30 mins to your door</p>
             </div>
           </div>
-          <div className="flex items-center justify-center gap-3 sm:justify-start">
+          <div className="flex items-center justify-start gap-3">
             <span className="text-xl">🛡️</span>
             <div>
               <p className="text-xs font-bold text-white">100% Hygiene Verified</p>
               <p className="text-[11px] text-[#87b48b]">Partnered with FSSAI certified kitchens</p>
             </div>
           </div>
-          <div className="flex items-center justify-center gap-3 sm:justify-start">
+          <div className="flex items-center justify-start gap-3">
             <span className="text-xl">💳</span>
             <div>
               <p className="text-xs font-bold text-white">Easy Payments</p>

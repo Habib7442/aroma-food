@@ -1,10 +1,12 @@
 import type { Metadata } from "next";
 import { LegalArticle } from "@/components/LegalArticle";
+import { buildMetadata } from "@/lib/seo";
 
-export const metadata: Metadata = {
+export const metadata: Metadata = buildMetadata({
   title: "Refund & Cancellation Policy — Zaavo",
   description: "How order cancellations and refunds work on Zaavo.",
-};
+  path: "/refund-policy",
+});
 
 const UPDATED = "August 3, 2026";
 

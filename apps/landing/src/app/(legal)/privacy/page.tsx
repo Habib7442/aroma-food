@@ -1,10 +1,12 @@
 import type { Metadata } from "next";
 import { LegalArticle } from "@/components/LegalArticle";
+import { buildMetadata } from "@/lib/seo";
 
-export const metadata: Metadata = {
+export const metadata: Metadata = buildMetadata({
   title: "Privacy Policy — Zaavo",
   description: "How Zaavo collects, uses, and protects your data.",
-};
+  path: "/privacy",
+});
 
 const UPDATED = "August 3, 2026";
 

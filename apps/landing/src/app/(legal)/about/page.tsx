@@ -1,11 +1,14 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { ArrowRightIcon } from "@/components/icons";
+import { buildMetadata } from "@/lib/seo";
 
-export const metadata: Metadata = {
-  title: "About Us — Zaavo",
+export const metadata: Metadata = buildMetadata({
+  title: "About Us — Zaavo Silchar",
   description: "Why Zaavo exists and what we're building for Silchar, Assam.",
-};
+  path: "/about",
+  keywords: ["about Zaavo", "Silchar food delivery company"],
+});
 
 const VALUES = [
   {

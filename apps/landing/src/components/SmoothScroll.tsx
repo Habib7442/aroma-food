@@ -1,14 +1,21 @@
 "use client";
 
 import { useEffect } from "react";
+import { useLenis } from "lenis/react";
+
+// Matches the scroll-mt-24 (96px) used on anchored sections, clearing the sticky header.
+const HEADER_OFFSET = -96;
 
 /**
- * Intercepts in-page "#id" and "/#id" link clicks and scrolls smoothly to
- * the target instead of letting the browser jump-and-append the hash to
- * the URL. Links to a section on a *different* page (e.g. "/#id" clicked
- * from /terms) are left alone so they navigate there normally.
+ * Intercepts in-page "#id" and "/#id" link clicks and scrolls smoothly
+ * (via the global Lenis instance) instead of letting the browser
+ * jump-and-append the hash to the URL. Links to a section on a *different*
+ * page (e.g. "/#id" clicked from /terms) are left alone so they navigate
+ * there normally.
  */
 export function SmoothScroll() {
+  const lenis = useLenis();
+
   useEffect(() => {
     function handleClick(event: MouseEvent) {
       const anchor = (event.target as HTMLElement).closest("a[href]");
@@ -29,12 +36,17 @@ export function SmoothScroll() {
       if (!target) return;
 
       event.preventDefault();
-      target.scrollIntoView({ behavior: "smooth", block: "start" });
+
+      if (lenis) {
+        lenis.scrollTo(target, { offset: HEADER_OFFSET, duration: 1.2 });
+      } else {
+        target.scrollIntoView({ behavior: "smooth", block: "start" });
+      }
     }
 
     document.addEventListener("click", handleClick);
     return () => document.removeEventListener("click", handleClick);
-  }, []);
+  }, [lenis]);
 
   return null;
 }
