@@ -10,7 +10,7 @@ export type Database = {
   // Allows to automatically instantiate createClient with right options
   // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
   __InternalSupabase: {
-    PostgrestVersion: "14.5"
+    PostgrestVersion: "14.17"
   }
   graphql_public: {
     Tables: {
@@ -124,6 +124,7 @@ export type Database = {
           price_paise: number
           restaurant_id: string
           thumbnail_url: string | null
+          unavailable_until: string | null
           updated_at: string
         }
         Insert: {
@@ -142,6 +143,7 @@ export type Database = {
           price_paise: number
           restaurant_id: string
           thumbnail_url?: string | null
+          unavailable_until?: string | null
           updated_at?: string
         }
         Update: {
@@ -160,6 +162,7 @@ export type Database = {
           price_paise?: number
           restaurant_id?: string
           thumbnail_url?: string | null
+          unavailable_until?: string | null
           updated_at?: string
         }
         Relationships: [
@@ -429,6 +432,42 @@ export type Database = {
         }
         Relationships: []
       }
+      user_preferences: {
+        Row: {
+          created_at: string
+          diet_preference: Database["public"]["Enums"]["diet_preference"] | null
+          preferred_cuisine_ids: string[]
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          diet_preference?:
+            | Database["public"]["Enums"]["diet_preference"]
+            | null
+          preferred_cuisine_ids?: string[]
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          diet_preference?:
+            | Database["public"]["Enums"]["diet_preference"]
+            | null
+          preferred_cuisine_ids?: string[]
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "user_preferences_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: true
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never
@@ -440,6 +479,7 @@ export type Database = {
       is_super_admin: { Args: never; Returns: boolean }
     }
     Enums: {
+      diet_preference: "pure_veg" | "veg_egg" | "everything"
       diet_type: "veg" | "egg" | "non_veg"
       gst_status: "registered" | "composition" | "unregistered"
       restaurant_status: "pending" | "approved" | "rejected" | "suspended"
@@ -573,6 +613,7 @@ export const Constants = {
   },
   public: {
     Enums: {
+      diet_preference: ["pure_veg", "veg_egg", "everything"],
       diet_type: ["veg", "egg", "non_veg"],
       gst_status: ["registered", "composition", "unregistered"],
       restaurant_status: ["pending", "approved", "rejected", "suspended"],
