@@ -12,6 +12,8 @@ export type DietType = "veg" | "egg" | "non_veg";
 
 export type GstStatus = "registered" | "composition" | "unregistered";
 
+export type RestaurantStatus = "pending" | "approved" | "rejected" | "suspended";
+
 export type DiscountFundedBy = "platform" | "vendor";
 
 /**
