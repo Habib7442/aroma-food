@@ -23,29 +23,31 @@ export function Pagination({
         {from}–{to} of {totalCount}
       </p>
       <div className="flex items-center gap-2">
-        <Link
-          href={makeHref(page - 1)}
-          scroll={false}
-          aria-disabled={page <= 1}
-          className={`rounded-full border border-border px-3 py-1.5 font-medium ${
-            page <= 1 ? "pointer-events-none text-border" : "text-primary hover:border-primary/30"
-          }`}
-        >
-          Previous
-        </Link>
+        {page <= 1 ? (
+          <span className="rounded-full border border-border px-3 py-1.5 font-medium text-border">Previous</span>
+        ) : (
+          <Link
+            href={makeHref(page - 1)}
+            scroll={false}
+            className="rounded-full border border-border px-3 py-1.5 font-medium text-primary hover:border-primary/30"
+          >
+            Previous
+          </Link>
+        )}
         <span className="text-primary-dark">
           Page {page} of {totalPages}
         </span>
-        <Link
-          href={makeHref(page + 1)}
-          scroll={false}
-          aria-disabled={page >= totalPages}
-          className={`rounded-full border border-border px-3 py-1.5 font-medium ${
-            page >= totalPages ? "pointer-events-none text-border" : "text-primary hover:border-primary/30"
-          }`}
-        >
-          Next
-        </Link>
+        {page >= totalPages ? (
+          <span className="rounded-full border border-border px-3 py-1.5 font-medium text-border">Next</span>
+        ) : (
+          <Link
+            href={makeHref(page + 1)}
+            scroll={false}
+            className="rounded-full border border-border px-3 py-1.5 font-medium text-primary hover:border-primary/30"
+          >
+            Next
+          </Link>
+        )}
       </div>
     </div>
   );

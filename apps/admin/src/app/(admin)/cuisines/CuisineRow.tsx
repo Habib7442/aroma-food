@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import { toast } from "sonner";
 import { DeleteCuisineButton } from "./DeleteCuisineButton";
 import { updateCuisine } from "./actions";
 
@@ -27,7 +28,10 @@ export function CuisineRow({ id, name, sortOrder }: { id: string; name: string; 
     startTransition(async () => {
       const result = await updateCuisine(id, { name: nameValue, sortOrder: Number(sortValue) || 0 });
       if (result.error) setError(result.error);
-      else setIsEditing(false);
+      else {
+        setIsEditing(false);
+        toast.success("Saved.");
+      }
     });
   };
 

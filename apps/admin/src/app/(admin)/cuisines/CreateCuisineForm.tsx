@@ -1,6 +1,7 @@
 "use client";
 
 import { useActionState, useEffect, useRef } from "react";
+import { toast } from "sonner";
 import { SubmitButton } from "@/components/SubmitButton";
 import { createCuisine, type CuisineFormState } from "./actions";
 
@@ -10,11 +11,14 @@ export function CreateCuisineForm() {
   const [state, formAction] = useActionState(createCuisine, initialState);
   const formRef = useRef<HTMLFormElement>(null);
 
-  // Only resets on an actual successful submit (no error) — a failed
-  // submit leaves what the admin typed in place so they can fix it.
+  // Keyed on state.successAt (a timestamp, not just a boolean) so this only
+  // fires once per actual submission — the initial state has no successAt
+  // at all, so the effect's first run (on mount) is a no-op.
   useEffect(() => {
-    if (!state.error && formRef.current) formRef.current.reset();
-  }, [state]);
+    if (!state.successAt) return;
+    formRef.current?.reset();
+    toast.success("Cuisine added.");
+  }, [state.successAt]);
 
   return (
     <form ref={formRef} action={formAction} className="mt-5 rounded-card border border-border bg-card p-5">

@@ -30,7 +30,9 @@ export default async function RestaurantsPage({
   searchParams: Promise<{ status?: string; page?: string; query?: string }>;
 }) {
   const { status, page: pageParam, query: nameQuery } = await searchParams;
-  const activeTab = (status as RestaurantStatus | undefined) ?? "pending";
+  const isKnownTab = (value: string | undefined): value is RestaurantStatus | "all" =>
+    STATUS_TABS.some((tab) => tab.value === value);
+  const activeTab = isKnownTab(status) ? status : "pending";
   const page = Math.max(1, Number(pageParam) || 1);
   const from = (page - 1) * PAGE_SIZE;
   const to = from + PAGE_SIZE - 1;
@@ -43,7 +45,7 @@ export default async function RestaurantsPage({
     .order("created_at", { ascending: false })
     .range(from, to);
 
-  if (activeTab !== ("all" as string)) {
+  if (activeTab !== "all") {
     dbQuery = dbQuery.eq("status", activeTab);
   }
   if (trimmedQuery) {
@@ -99,7 +101,7 @@ export default async function RestaurantsPage({
 
       {error ? (
         <p className="mt-6 text-sm text-non-veg">Couldn&apos;t load restaurants: {error.message}</p>
-      ) : (restaurants ?? []).length === 0 ? (
+      ) : (count ?? 0) === 0 ? (
         <div className="mt-6 flex flex-col items-center gap-3 rounded-card border border-dashed border-border bg-card py-16">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} className="h-9 w-9 text-border">
             <path strokeLinecap="round" strokeLinejoin="round" d="M3 9.5 12 4l9 5.5" />
@@ -111,50 +113,62 @@ export default async function RestaurantsPage({
         </div>
       ) : (
         <>
-          <div className="mt-6 overflow-hidden rounded-card border border-border bg-card">
-            <table className="w-full text-left text-sm">
-              <thead className="border-b border-border bg-background/60 text-xs font-medium uppercase tracking-wide text-primary-dark">
-                <tr>
-                  <th className="px-5 py-3">Name</th>
-                  <th className="px-5 py-3">Status</th>
-                  <th className="px-5 py-3">Commission</th>
-                  <th className="px-5 py-3">GST</th>
-                  <th className="px-5 py-3">Pure veg</th>
-                  <th className="px-5 py-3">Created</th>
-                </tr>
-              </thead>
-              <tbody>
-                {(restaurants ?? []).map((r, i) => (
-                  <tr key={r.id} className="border-b border-border last:border-0 hover:bg-background/60">
-                    <td className="px-5 py-3.5">
-                      <Link href={`/restaurants/${r.id}`} className="flex items-center gap-3">
-                        {r.logo_url ? (
-                          // eslint-disable-next-line @next/next/no-img-element -- external R2 URL
-                          <img src={r.logo_url} alt="" className="h-8 w-8 shrink-0 rounded-full border border-border object-cover" />
-                        ) : (
-                          <span
-                            className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-semibold ${AVATAR_TINTS[i % AVATAR_TINTS.length]}`}
-                          >
-                            {r.name.charAt(0).toUpperCase()}
-                          </span>
-                        )}
-                        <span className="font-medium text-primary hover:underline">{r.name}</span>
-                      </Link>
-                    </td>
-                    <td className="px-5 py-3.5">
-                      <span className={`rounded-full px-2.5 py-1 text-xs font-medium capitalize ${STATUS_STYLES[r.status]}`}>
-                        {r.status}
-                      </span>
-                    </td>
-                    <td className="px-5 py-3.5 text-primary-dark">{(r.commission_rate_bps / 100).toFixed(2)}%</td>
-                    <td className="px-5 py-3.5 text-primary-dark capitalize">{r.gst_status}</td>
-                    <td className="px-5 py-3.5 text-primary-dark">{r.is_pure_veg ? "Yes" : "No"}</td>
-                    <td className="px-5 py-3.5 text-primary-dark">{new Date(r.created_at).toLocaleDateString()}</td>
+          {(restaurants ?? []).length === 0 ? (
+            // count > 0 but this page's slice is empty — page is past the
+            // last page. Pagination below still renders (outside this
+            // branch) so there's a way back instead of a dead end that
+            // looks identical to "no restaurants" when some do exist.
+            <p className="mt-6 text-sm text-primary-dark">No restaurants on this page.</p>
+          ) : (
+            <div className="mt-6 overflow-hidden rounded-card border border-border bg-card">
+              <table className="w-full text-left text-sm">
+                <thead className="border-b border-border bg-background/60 text-xs font-medium uppercase tracking-wide text-primary-dark">
+                  <tr>
+                    <th className="px-5 py-3">Name</th>
+                    <th className="px-5 py-3">Status</th>
+                    <th className="px-5 py-3">Commission</th>
+                    <th className="px-5 py-3">GST</th>
+                    <th className="px-5 py-3">Pure veg</th>
+                    <th className="px-5 py-3">Created</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody>
+                  {(restaurants ?? []).map((r, i) => (
+                    <tr key={r.id} className="border-b border-border last:border-0 hover:bg-background/60">
+                      <td className="px-5 py-3.5">
+                        <Link href={`/restaurants/${r.id}`} className="flex items-center gap-3">
+                          {r.logo_url ? (
+                            // eslint-disable-next-line @next/next/no-img-element -- external R2 URL
+                            <img
+                              src={r.logo_url}
+                              alt=""
+                              className="h-8 w-8 shrink-0 rounded-full border border-border object-cover"
+                            />
+                          ) : (
+                            <span
+                              className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-semibold ${AVATAR_TINTS[i % AVATAR_TINTS.length]}`}
+                            >
+                              {r.name.charAt(0).toUpperCase()}
+                            </span>
+                          )}
+                          <span className="font-medium text-primary hover:underline">{r.name}</span>
+                        </Link>
+                      </td>
+                      <td className="px-5 py-3.5">
+                        <span className={`rounded-full px-2.5 py-1 text-xs font-medium capitalize ${STATUS_STYLES[r.status]}`}>
+                          {r.status}
+                        </span>
+                      </td>
+                      <td className="px-5 py-3.5 text-primary-dark">{(r.commission_rate_bps / 100).toFixed(2)}%</td>
+                      <td className="px-5 py-3.5 text-primary-dark capitalize">{r.gst_status}</td>
+                      <td className="px-5 py-3.5 text-primary-dark">{r.is_pure_veg ? "Yes" : "No"}</td>
+                      <td className="px-5 py-3.5 text-primary-dark">{new Date(r.created_at).toLocaleDateString()}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
           <Pagination page={page} pageSize={PAGE_SIZE} totalCount={count ?? 0} makeHref={makeHref} />
         </>
       )}

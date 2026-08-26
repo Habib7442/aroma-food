@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import { toast } from "sonner";
 import {
   AlertDialog,
   AlertDialogCancel,
@@ -22,12 +23,20 @@ export function DeleteCuisineButton({ id, name }: { id: string; name: string }) 
   // click regardless of outcome, which would hide a failure's error message
   // the instant it appeared. A plain button + controlled `open` lets the
   // dialog stay open on error and only close after a confirmed success.
+  //
+  // The success toast (not an inline message) is deliberate: the dialog
+  // closes and the row disappears from the table on success, so there's no
+  // surface left to show an inline confirmation on — a toast is the only
+  // feedback that outlives the dialog closing.
   const onConfirm = () => {
     setError(null);
     startTransition(async () => {
       const result = await deleteCuisine(id);
       if (result.error) setError(result.error);
-      else setOpen(false);
+      else {
+        setOpen(false);
+        toast.success(`"${name}" deleted.`);
+      }
     });
   };
 

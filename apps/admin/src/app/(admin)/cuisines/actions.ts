@@ -5,6 +5,10 @@ import { getSupabaseClient } from "@/lib/supabase";
 
 export interface CuisineFormState {
   error?: string;
+  // Distinct from the initial {} state — without this, a just-succeeded
+  // submission is indistinguishable from "never submitted yet", and the
+  // form can't tell when to fire its success toast.
+  successAt?: number;
 }
 
 export async function createCuisine(_prevState: CuisineFormState, formData: FormData): Promise<CuisineFormState> {
@@ -17,7 +21,7 @@ export async function createCuisine(_prevState: CuisineFormState, formData: Form
   if (error) return { error: error.message };
 
   revalidatePath("/cuisines");
-  return {};
+  return { successAt: Date.now() };
 }
 
 export async function updateCuisine(

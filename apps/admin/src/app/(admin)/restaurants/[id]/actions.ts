@@ -14,6 +14,17 @@ export interface UpdateRestaurantState {
   savedAt?: number;
 }
 
+const STATUSES: RestaurantStatus[] = ["pending", "approved", "rejected", "suspended"];
+const GST_STATUSES: GstStatus[] = ["registered", "composition", "unregistered"];
+
+function isRestaurantStatus(value: unknown): value is RestaurantStatus {
+  return typeof value === "string" && STATUSES.includes(value as RestaurantStatus);
+}
+
+function isGstStatus(value: unknown): value is GstStatus {
+  return typeof value === "string" && GST_STATUSES.includes(value as GstStatus);
+}
+
 export async function updateRestaurant(
   id: string,
   _prevState: UpdateRestaurantState,
@@ -32,10 +43,28 @@ export async function updateRestaurant(
     return { error: "Not authorized." };
   }
 
-  const status = formData.get("status") as RestaurantStatus;
-  const gstStatus = formData.get("gst_status") as GstStatus;
+  // This action writes with the service-role key (bypasses RLS entirely —
+  // see §6), so unlike an RLS-backed write, nothing downstream double-checks
+  // these values are actually valid. The <select>s only offer valid options
+  // and the commission input has min/max, but that's client-side only — a
+  // direct Server Action invocation (or a future refactor of the form) could
+  // send anything, and without this check it'd surface as a raw Postgres
+  // NOT NULL/CHECK/enum-coercion error instead of a message this form can
+  // actually render.
+  const status = formData.get("status");
+  const gstStatus = formData.get("gst_status");
   const isPureVeg = formData.get("is_pure_veg") === "on";
   const commissionRatePercent = Number(formData.get("commission_rate_percent"));
+
+  if (!isRestaurantStatus(status)) {
+    return { error: "Invalid status." };
+  }
+  if (!isGstStatus(gstStatus)) {
+    return { error: "Invalid GST status." };
+  }
+  if (!Number.isFinite(commissionRatePercent) || commissionRatePercent < 0 || commissionRatePercent > 100) {
+    return { error: "Commission rate must be a number between 0 and 100." };
+  }
 
   const supabase = getServiceRoleSupabaseClient();
   const { error } = await supabase

@@ -223,7 +223,11 @@ export default async function RestaurantDetailPage({
                 >
                   {menuSections.length === 0 ? (
                     <p className="mt-4 text-sm text-primary-dark">
-                      {isSearching ? `No dishes match "${menuQuery}".` : "No dishes on this restaurant's menu yet."}
+                      {isSearching
+                        ? `No dishes match "${menuQuery}".`
+                        : (totalDishCount ?? 0) > 0
+                          ? "No dishes on this page."
+                          : "No dishes on this restaurant's menu yet."}
                     </p>
                   ) : (
                     <div className="mt-4 flex flex-col gap-5">
