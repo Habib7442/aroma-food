@@ -19,8 +19,19 @@ interface MenuItemRow {
   price_paise: number;
   diet_type: DietType;
   is_available: boolean;
+  unavailable_until: string | null;
   category_id: string | null;
   thumbnail_url: string | null;
+}
+
+// Mirrors menu_items_select_public_available's effective-availability
+// formula (see supabase/migrations/20260826192847_menu_item_scheduled_availability.sql)
+// so a scheduled pause whose time has already passed shows as live here
+// too, not "paused" forever until someone edits the row.
+function isEffectivelyAvailable(item: Pick<MenuItemRow, "is_available" | "unavailable_until">): boolean {
+  if (item.is_available) return true;
+  if (!item.unavailable_until) return false;
+  return new Date(item.unavailable_until).getTime() <= Date.now();
 }
 
 const UNCATEGORIZED_SECTION_ID = "uncategorized";
@@ -68,7 +79,7 @@ export default async function RestaurantDetailPage({
     // doesn't apply — a capped, ungrouped result list instead.
     const { data: matched, count } = await supabase
       .from("menu_items")
-      .select("id, name, price_paise, diet_type, is_available, category_id, thumbnail_url", { count: "exact" })
+      .select("id, name, price_paise, diet_type, is_available, unavailable_until, category_id, thumbnail_url", { count: "exact" })
       .eq("restaurant_id", id)
       .ilike("name", `%${menuQuery}%`)
       .order("name")
@@ -96,7 +107,7 @@ export default async function RestaurantDetailPage({
 
     let menuItemsQuery = supabase
       .from("menu_items")
-      .select("id, name, price_paise, diet_type, is_available, category_id, thumbnail_url")
+      .select("id, name, price_paise, diet_type, is_available, unavailable_until, category_id, thumbnail_url")
       .eq("restaurant_id", id)
       .order("name");
     menuItemsQuery = isLastMenuPage
@@ -250,7 +261,7 @@ export default async function RestaurantDetailPage({
                                 <span
                                   title={item.name}
                                   className={`flex-1 text-sm ${
-                                    item.is_available ? "text-primary" : "text-primary-dark line-through"
+                                    isEffectivelyAvailable(item) ? "text-primary" : "text-primary-dark line-through"
                                   }`}
                                 >
                                   {item.name}
