@@ -1,4 +1,4 @@
-import { useAuth, useClerk, useSignIn } from "@clerk/expo";
+import { useAuth, useClerk, useSignIn, useSSO } from "@clerk/expo";
 import { Ionicons } from "@expo/vector-icons";
 import { Wordmark } from "@zaavo/ui";
 import { Link, router } from "expo-router";
@@ -10,10 +10,13 @@ import { ScreenContainer } from "../../components/ScreenContainer";
 import { TextField } from "../../components/TextField";
 
 export default function SignInScreen() {
-  // See (auth)/_layout.tsx — a session with a pending "choose-organization"
-  // task otherwise reads isSignedIn: false despite a real session existing.
+  // See apps/customer/AGENTS.md §6 — shared Clerk instance with
+  // apps/vendor (Organizations enabled) means every session carries a
+  // pending task regardless of whether this app uses orgs; without this
+  // option isSignedIn reads false right after a real sign-in completes.
   const { isSignedIn, isLoaded } = useAuth({ treatPendingAsSignedOut: false });
   const { signIn, errors, fetchStatus } = useSignIn();
+  const { startSSOFlow } = useSSO();
   const clerk = useClerk();
   const { signOut } = clerk;
   const [step, setStep] = useState<"form" | "verify">("form");
@@ -21,6 +24,7 @@ export default function SignInScreen() {
   const [password, setPassword] = useState("");
   const [code, setCode] = useState("");
   const [formError, setFormError] = useState<string | null>(null);
+  const [isGooglePending, setIsGooglePending] = useState(false);
 
   // Clerk restores a persisted session from SecureStore asynchronously on
   // cold start. Rendering the form before isLoaded is true lets a submit
@@ -49,7 +53,7 @@ export default function SignInScreen() {
     // so useAuth()'s isSignedIn actually reflects it before the route
     // guards run.
     await clerk.client?.reload();
-    router.replace("/(app)/orders");
+    router.replace("/");
   };
 
   const onSubmit = async () => {
@@ -75,8 +79,7 @@ export default function SignInScreen() {
     } else if (signIn.status === "needs_second_factor" || signIn.status === "needs_client_trust") {
       // needs_client_trust is new-device/new-install verification; the same
       // mfa methods also serve a genuine needs_second_factor. Email code is
-      // the only factor this app supports — no MFA enrollment UI exists to
-      // set up TOTP/backup codes, so those shouldn't occur in practice.
+      // the only factor this app supports.
       const emailFactor = signIn.supportedSecondFactors?.find((f) => f.strategy === "email_code");
       if (!emailFactor) {
         setFormError("This account requires a verification method this app doesn't support yet.");
@@ -108,27 +111,47 @@ export default function SignInScreen() {
     }
   };
 
+  const onGoogleSignIn = async () => {
+    setFormError(null);
+    setIsGooglePending(true);
+    try {
+      const { createdSessionId, setActive, signUp } = await startSSOFlow({ strategy: "oauth_google" });
+      if (createdSessionId && setActive) {
+        await setActive({ session: createdSessionId });
+        // Same race as finalizeAndEnter() above — the Client resource's
+        // local state doesn't always pick up a just-activated session on
+        // its own, so useAuth()'s isSignedIn can still read false when the
+        // route guards run right after router.replace, bouncing back to
+        // sign-in. Force a refetch first.
+        await clerk.client?.reload();
+        router.replace("/");
+      } else if (signUp?.status === "missing_requirements") {
+        setFormError("This Google account needs more info to finish signing up — try email sign-up instead.");
+      }
+      // No createdSessionId and no missing requirements → user cancelled. Not an error.
+    } catch (err) {
+      console.error("Google sign-in error:", JSON.stringify(err, null, 2));
+      setFormError(err instanceof Error ? err.message : "Couldn't sign in with Google. Please try again.");
+    } finally {
+      setIsGooglePending(false);
+    }
+  };
+
   return (
     <ScreenContainer scroll center centerVertical>
       <View className="w-full max-w-[400px] items-center">
-        {/* Main Partner Portal Card */}
-        <View className="w-full rounded-2xl border border-border bg-card p-6 shadow-sm">
-          {/* Header */}
-          <View className="items-center mb-6">
+        <View className="w-full rounded-card border border-border bg-card p-6">
+          <View className="mb-6 items-center">
             <Wordmark height={44} />
-            <Text className="mt-3 text-3xl font-rubik-bold text-primary tracking-tight text-center">
-              Partner Portal
-            </Text>
-            <Text className="font-sans text-sm text-[#5A6357] text-center mt-1">
-              Sign in to manage your operations
-            </Text>
+            <Text className="mt-3 text-center font-headline text-3xl text-primary">Welcome back</Text>
+            <Text className="mt-1 text-center font-sans text-sm text-primary-dark">Sign in to order food</Text>
           </View>
 
           {step === "form" ? (
             <View className="gap-4">
               <TextField
                 label="Email Address"
-                placeholder="name@company.com"
+                placeholder="you@example.com"
                 value={emailAddress}
                 onChangeText={setEmailAddress}
                 autoCapitalize="none"
@@ -149,14 +172,14 @@ export default function SignInScreen() {
                 headerRight={
                   <Link href="/(auth)/forgot-password" asChild>
                     <Pressable>
-                      <Text className="font-rubik-medium text-xs text-primary">Forgot password?</Text>
+                      <Text className="font-inter-semibold text-xs text-primary">Forgot password?</Text>
                     </Pressable>
                   </Link>
                 }
               />
 
               {formError ? (
-                <View className="rounded-lg bg-red-50 p-3 border border-red-200">
+                <View className="rounded-2xl border border-red-200 bg-red-50 p-3">
                   <Text className="font-sans text-xs text-non-veg">{formError}</Text>
                 </View>
               ) : null}
@@ -167,12 +190,26 @@ export default function SignInScreen() {
                 loading={fetchStatus === "fetching"}
                 icon={<Ionicons name="arrow-forward" size={18} color="#FFFFFF" />}
               />
+
+              <View className="flex-row items-center gap-3">
+                <View className="h-px flex-1 bg-border" />
+                <Text className="font-sans text-xs text-primary-dark">OR</Text>
+                <View className="h-px flex-1 bg-border" />
+              </View>
+
+              <Button
+                label="Continue with Google"
+                onPress={onGoogleSignIn}
+                variant="secondary"
+                loading={isGooglePending}
+                icon={<Ionicons name="logo-google" size={18} color="#1D4626" />}
+              />
             </View>
           ) : (
             <View className="gap-4">
-              <Text className="font-sans text-sm text-[#5A6357] text-center">
+              <Text className="text-center font-sans text-sm text-primary-dark">
                 This device needs verifying. Enter the code sent to{"\n"}
-                <Text className="font-rubik-medium text-primary">{emailAddress}</Text>
+                <Text className="font-inter-semibold text-primary">{emailAddress}</Text>
               </Text>
               <TextField
                 label="Verification Code"
@@ -184,7 +221,7 @@ export default function SignInScreen() {
               />
 
               {formError ? (
-                <View className="rounded-lg bg-red-50 p-3 border border-red-200">
+                <View className="rounded-2xl border border-red-200 bg-red-50 p-3">
                   <Text className="font-sans text-xs text-non-veg">{formError}</Text>
                 </View>
               ) : null}
@@ -198,15 +235,13 @@ export default function SignInScreen() {
             </View>
           )}
 
-          {/* Divider */}
           <View className="my-6 border-t border-border" />
 
-          {/* Secondary Actions */}
           <View className="items-center">
             <Link href="/(auth)/sign-up" asChild>
               <Pressable className="flex-row items-center gap-1.5 py-1">
-                <Text className="font-sans text-sm text-[#5A6357]">New restaurant?</Text>
-                <Text className="font-rubik-medium text-sm text-primary">Register account</Text>
+                <Text className="font-sans text-sm text-primary-dark">New here?</Text>
+                <Text className="font-inter-semibold text-sm text-primary">Create an account</Text>
               </Pressable>
             </Link>
           </View>

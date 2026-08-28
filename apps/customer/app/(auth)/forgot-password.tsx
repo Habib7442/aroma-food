@@ -57,7 +57,7 @@ export default function ForgotPasswordScreen() {
         setFormError(finalizeError.message);
         return;
       }
-      router.replace("/(app)/orders");
+      router.replace("/");
     } else {
       setFormError(`Couldn't finish the reset (status: ${signIn.status}). Please sign in again.`);
     }
@@ -66,23 +66,18 @@ export default function ForgotPasswordScreen() {
   return (
     <ScreenContainer scroll center centerVertical>
       <View className="w-full max-w-[400px] items-center">
-        <View className="w-full rounded-2xl border border-border bg-card p-6 shadow-sm">
-          {/* Header */}
-          <View className="items-center mb-6">
+        <View className="w-full rounded-card border border-border bg-card p-6">
+          <View className="mb-6 items-center">
             <Wordmark height={44} />
-            <Text className="mt-3 text-3xl font-rubik-bold text-primary tracking-tight text-center">
-              Reset Password
-            </Text>
-            <Text className="font-sans text-sm text-[#5A6357] text-center mt-1">
-              Recover access to your vendor account
-            </Text>
+            <Text className="mt-3 text-center font-headline text-3xl text-primary">Reset Password</Text>
+            <Text className="mt-1 text-center font-sans text-sm text-primary-dark">Recover access to your account</Text>
           </View>
 
           {step === "email" ? (
             <View className="gap-4">
               <TextField
                 label="Email Address"
-                placeholder="name@company.com"
+                placeholder="you@example.com"
                 value={emailAddress}
                 onChangeText={setEmailAddress}
                 autoCapitalize="none"
@@ -91,7 +86,7 @@ export default function ForgotPasswordScreen() {
                 error={errors.fields.identifier?.message}
               />
               {formError ? (
-                <View className="rounded-lg bg-red-50 p-3 border border-red-200">
+                <View className="rounded-2xl border border-red-200 bg-red-50 p-3">
                   <Text className="font-sans text-xs text-non-veg">{formError}</Text>
                 </View>
               ) : null}
@@ -106,9 +101,9 @@ export default function ForgotPasswordScreen() {
 
           {step === "code" ? (
             <View className="gap-4">
-              <Text className="font-sans text-sm text-[#5A6357] text-center">
+              <Text className="text-center font-sans text-sm text-primary-dark">
                 Enter the recovery code sent to{"\n"}
-                <Text className="font-rubik-medium text-primary">{emailAddress}</Text>
+                <Text className="font-inter-semibold text-primary">{emailAddress}</Text>
               </Text>
               <TextField
                 label="Reset Code"
@@ -119,7 +114,7 @@ export default function ForgotPasswordScreen() {
                 error={errors.fields.code?.message}
               />
               {formError ? (
-                <View className="rounded-lg bg-red-50 p-3 border border-red-200">
+                <View className="rounded-2xl border border-red-200 bg-red-50 p-3">
                   <Text className="font-sans text-xs text-non-veg">{formError}</Text>
                 </View>
               ) : null}
@@ -145,7 +140,7 @@ export default function ForgotPasswordScreen() {
                 error={errors.fields.password?.message}
               />
               {formError ? (
-                <View className="rounded-lg bg-red-50 p-3 border border-red-200">
+                <View className="rounded-2xl border border-red-200 bg-red-50 p-3">
                   <Text className="font-sans text-xs text-non-veg">{formError}</Text>
                 </View>
               ) : null}
@@ -158,15 +153,13 @@ export default function ForgotPasswordScreen() {
             </View>
           ) : null}
 
-          {/* Divider */}
           <View className="my-6 border-t border-border" />
 
-          {/* Secondary Actions */}
           <View className="items-center">
             <Link href="/(auth)/sign-in" asChild>
               <Pressable className="flex-row items-center gap-1.5 py-1">
                 <Ionicons name="arrow-back" size={16} color="#1D4626" />
-                <Text className="font-rubik-medium text-sm text-primary">Back to Sign In</Text>
+                <Text className="font-inter-semibold text-sm text-primary">Back to Sign In</Text>
               </Pressable>
             </Link>
           </View>
@@ -175,5 +168,3 @@ export default function ForgotPasswordScreen() {
     </ScreenContainer>
   );
 }
-
-

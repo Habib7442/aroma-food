@@ -1,4 +1,4 @@
-import { useAuth, useClerk, useSignUp } from "@clerk/expo";
+import { useAuth, useClerk, useSignUp, useSSO } from "@clerk/expo";
 import { Ionicons } from "@expo/vector-icons";
 import { Wordmark } from "@zaavo/ui";
 import { Link, router } from "expo-router";
@@ -8,28 +8,29 @@ import { ActivityIndicator, Pressable, Text, View } from "react-native";
 import { Button } from "../../components/Button";
 import { ScreenContainer } from "../../components/ScreenContainer";
 import { TextField } from "../../components/TextField";
-import { useUiStore } from "../../store/useUiStore";
 
 export default function SignUpScreen() {
-  // See (auth)/_layout.tsx — a session with a pending "choose-organization"
-  // task otherwise reads isSignedIn: false despite a real session existing.
+  // See apps/customer/AGENTS.md §6 — shared Clerk instance with
+  // apps/vendor (Organizations enabled) means every session carries a
+  // pending task regardless of whether this app uses orgs; without this
+  // option isSignedIn reads false right after a real sign-up completes.
   const { isLoaded, isSignedIn } = useAuth({ treatPendingAsSignedOut: false });
   const { signUp, errors, fetchStatus } = useSignUp();
+  const { startSSOFlow } = useSSO();
   const clerk = useClerk();
   const { signOut } = clerk;
-  const setPendingRestaurantName = useUiStore((s) => s.setPendingRestaurantName);
 
   const [step, setStep] = useState<"form" | "verify">("form");
   const [emailAddress, setEmailAddress] = useState("");
   const [password, setPassword] = useState("");
-  const [restaurantName, setRestaurantName] = useState("");
   const [code, setCode] = useState("");
   const [formError, setFormError] = useState<string | null>(null);
+  const [isGooglePending, setIsGooglePending] = useState(false);
 
-  // Same race as sign-in.tsx: don't let the form submit before Clerk has
-  // finished restoring any persisted session from SecureStore, or a
-  // signUp.password() call can land just after hydration completes and get
-  // rejected with "already signed in" even though the form looked idle.
+  // Don't let the form submit before Clerk has finished restoring any
+  // persisted session from SecureStore, or a signUp.password() call can land
+  // just after hydration completes and get rejected with "already signed in"
+  // even though the form looked idle.
   if (!isLoaded) {
     return (
       <ScreenContainer center centerVertical>
@@ -57,7 +58,6 @@ export default function SignUpScreen() {
     }
 
     if (signUp.status === "complete") {
-      setPendingRestaurantName(restaurantName);
       const { error: finalizeError } = await signUp.finalize();
       if (finalizeError) {
         setFormError(`[${finalizeError.code}] ${finalizeError.message}`);
@@ -67,6 +67,7 @@ export default function SignUpScreen() {
       // just-activated session on its own — force a refetch so useAuth()'s
       // isSignedIn actually reflects it before the route guards run.
       await clerk.client?.reload();
+      router.replace("/");
       return;
     }
 
@@ -92,10 +93,6 @@ export default function SignUpScreen() {
     }
 
     if (signUp.status === "complete") {
-      // Stashed here (not in onSubmitForm) since this is the last point
-      // before the session activates and the (auth) layout guard takes over
-      // — no-org.tsx reads this to pre-fill the create-restaurant form.
-      setPendingRestaurantName(restaurantName);
       const { error: finalizeError } = await signUp.finalize();
       if (finalizeError) {
         setFormError(`[${finalizeError.code}] ${finalizeError.message}`);
@@ -103,11 +100,8 @@ export default function SignUpScreen() {
       }
       // See onSubmitForm's identical call for why this is needed.
       await clerk.client?.reload();
+      router.replace("/");
     } else {
-      // Surfaces exactly what Clerk still wants (e.g. a required field beyond
-      // email/password enabled in the Dashboard) instead of a dead-end
-      // generic message — this status/fields combo is what "stuck after
-      // verification" actually means under the hood.
       setFormError(
         `Couldn't complete sign up (status: ${signUp.status}). ` +
           `Missing: ${signUp.missingFields.join(", ") || "none"}. ` +
@@ -116,33 +110,48 @@ export default function SignUpScreen() {
     }
   };
 
+  const onGoogleSignIn = async () => {
+    setFormError(null);
+    setIsGooglePending(true);
+    try {
+      const { createdSessionId, setActive, signUp: googleSignUp } = await startSSOFlow({ strategy: "oauth_google" });
+      if (createdSessionId && setActive) {
+        await setActive({ session: createdSessionId });
+        // Same race as onSubmitForm's finalize path above — force a
+        // refetch of the Client resource before navigating, or
+        // useAuth()'s isSignedIn can still read false when the route
+        // guards run, bouncing back to sign-in.
+        await clerk.client?.reload();
+        router.replace("/");
+      } else if (googleSignUp?.status === "missing_requirements") {
+        setFormError("This Google account needs more info to finish signing up — try email sign-up instead.");
+      }
+      // No createdSessionId and no missing requirements → user cancelled. Not an error.
+    } catch (err) {
+      console.error("Google sign-up error:", JSON.stringify(err, null, 2));
+      setFormError(err instanceof Error ? err.message : "Couldn't sign in with Google. Please try again.");
+    } finally {
+      setIsGooglePending(false);
+    }
+  };
+
   return (
     <ScreenContainer scroll center centerVertical>
       <View className="w-full max-w-[400px] items-center">
-        <View className="w-full rounded-2xl border border-border bg-card p-6 shadow-sm">
-          {/* Header */}
-          <View className="items-center mb-6">
+        <View className="w-full rounded-card border border-border bg-card p-6">
+          <View className="mb-6 items-center">
             <Wordmark height={44} />
-            <Text className="mt-3 text-3xl font-rubik-bold text-primary tracking-tight text-center">
-              Register Restaurant
-            </Text>
-            <Text className="font-sans text-sm text-[#5A6357] text-center mt-1">
-              Join Zaavo as a restaurant partner
+            <Text className="mt-3 text-center font-headline text-3xl text-primary">Create your account</Text>
+            <Text className="mt-1 text-center font-sans text-sm text-primary-dark">
+              Order from restaurants across Silchar
             </Text>
           </View>
 
           {step === "form" ? (
             <View className="gap-4">
               <TextField
-                label="Restaurant Name"
-                placeholder="e.g. Silchar Biryani House"
-                value={restaurantName}
-                onChangeText={setRestaurantName}
-                autoCapitalize="words"
-              />
-              <TextField
                 label="Email Address"
-                placeholder="owner@restaurant.com"
+                placeholder="you@example.com"
                 value={emailAddress}
                 onChangeText={setEmailAddress}
                 autoCapitalize="none"
@@ -162,7 +171,7 @@ export default function SignUpScreen() {
               />
 
               {formError ? (
-                <View className="rounded-lg bg-red-50 p-3 border border-red-200">
+                <View className="rounded-2xl border border-red-200 bg-red-50 p-3">
                   <Text className="font-sans text-xs text-non-veg">{formError}</Text>
                 </View>
               ) : null}
@@ -173,15 +182,29 @@ export default function SignUpScreen() {
                 label="Create Account"
                 onPress={onSubmitForm}
                 loading={fetchStatus === "fetching"}
-                disabled={!restaurantName || !emailAddress || !password}
+                disabled={!emailAddress || !password}
                 icon={<Ionicons name="arrow-forward" size={18} color="#FFFFFF" />}
+              />
+
+              <View className="flex-row items-center gap-3">
+                <View className="h-px flex-1 bg-border" />
+                <Text className="font-sans text-xs text-primary-dark">OR</Text>
+                <View className="h-px flex-1 bg-border" />
+              </View>
+
+              <Button
+                label="Continue with Google"
+                onPress={onGoogleSignIn}
+                variant="secondary"
+                loading={isGooglePending}
+                icon={<Ionicons name="logo-google" size={18} color="#1D4626" />}
               />
             </View>
           ) : (
             <View className="gap-4">
-              <Text className="font-sans text-sm text-[#5A6357] text-center">
+              <Text className="text-center font-sans text-sm text-primary-dark">
                 Enter the verification code sent to{"\n"}
-                <Text className="font-rubik-medium text-primary">{emailAddress}</Text>
+                <Text className="font-inter-semibold text-primary">{emailAddress}</Text>
               </Text>
               <TextField
                 label="Verification Code"
@@ -193,7 +216,7 @@ export default function SignUpScreen() {
               />
 
               {formError ? (
-                <View className="rounded-lg bg-red-50 p-3 border border-red-200">
+                <View className="rounded-2xl border border-red-200 bg-red-50 p-3">
                   <Text className="font-sans text-xs text-non-veg">{formError}</Text>
                 </View>
               ) : null}
@@ -207,15 +230,13 @@ export default function SignUpScreen() {
             </View>
           )}
 
-          {/* Divider */}
           <View className="my-6 border-t border-border" />
 
-          {/* Secondary Actions */}
           <View className="items-center">
             <Link href="/(auth)/sign-in" asChild>
               <Pressable className="flex-row items-center gap-1.5 py-1">
-                <Text className="font-sans text-sm text-[#5A6357]">Already registered?</Text>
-                <Text className="font-rubik-medium text-sm text-primary">Sign in here</Text>
+                <Text className="font-sans text-sm text-primary-dark">Already have an account?</Text>
+                <Text className="font-inter-semibold text-sm text-primary">Sign in</Text>
               </Pressable>
             </Link>
           </View>
@@ -224,4 +245,3 @@ export default function SignUpScreen() {
     </ScreenContainer>
   );
 }
-
