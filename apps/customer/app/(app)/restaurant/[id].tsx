@@ -3,7 +3,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useQuery } from "@tanstack/react-query";
 import { router, useLocalSearchParams } from "expo-router";
 import { useMemo, useState } from "react";
-import { ActivityIndicator, FlatList, Image, Pressable, Text, View } from "react-native";
+import { ActivityIndicator, FlatList, Image, Linking, Modal, Pressable, ScrollView, Text, View } from "react-native";
 
 import { DebouncedSearchBox } from "../../../components/DebouncedSearchBox";
 import { DietBadge } from "../../../components/DietBadge";
@@ -34,15 +34,40 @@ interface BannerRow {
   sort_order: number;
 }
 
+interface DayHoursRow {
+  day_of_week: number;
+  is_closed: boolean;
+  open_time: string | null;
+  close_time: string | null;
+}
+
 // Sentinel for the always-present "Other" rail entry — items with no
 // category_id would otherwise have no tab to live under.
 const UNCATEGORIZED_ID = "uncategorized";
+
+// day_of_week follows Postgres's EXTRACT(DOW ...) / JS's Date.getDay()
+// convention: 0 = Sunday .. 6 = Saturday. Same convention/labels as
+// apps/vendor/lib/useRestaurantHours.ts — kept as a local copy rather than
+// a shared import since it's a 7-string constant, not worth a cross-app
+// dependency for.
+const DAY_LABELS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+
+function formatHour(time: string | null): string {
+  if (!time) return "";
+  const [hourStr, minuteStr] = time.split(":");
+  const hour = Number(hourStr);
+  const period = hour >= 12 ? "PM" : "AM";
+  const twelveHour = hour % 12 === 0 ? 12 : hour % 12;
+  return `${twelveHour}:${minuteStr} ${period}`;
+}
 
 export default function RestaurantDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const [explicitCategoryId, setExplicitCategoryId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [dietFilter, setDietFilter] = useState<DietType | null>(null);
+  const [isDetailsVisible, setIsDetailsVisible] = useState(false);
+  const [expandedBannerUrl, setExpandedBannerUrl] = useState<string | null>(null);
 
   const {
     data: restaurant,
@@ -51,14 +76,32 @@ export default function RestaurantDetailScreen() {
   } = useQuery({
     queryKey: ["restaurant", id],
     queryFn: async () => {
+      // A customer deciding where to order from is entitled to the same
+      // address/contact/hours info they'd see on a storefront — fetched
+      // here (not lazily behind the details modal) since it's a single
+      // cheap row, not worth a second round trip just to defer it.
       const { data, error } = await supabase
         .from("restaurants")
-        .select("id, name, description, is_pure_veg, is_open")
+        .select("id, name, description, is_pure_veg, is_open, address, landmark, pincode, contact_phone")
         .eq("id", id)
         .maybeSingle();
       if (error) throw error;
       return data;
     },
+  });
+
+  const { data: hours } = useQuery({
+    queryKey: ["restaurant-hours", "public", id],
+    queryFn: async (): Promise<DayHoursRow[]> => {
+      const { data, error } = await supabase
+        .from("restaurant_hours")
+        .select("day_of_week, is_closed, open_time, close_time")
+        .eq("restaurant_id", id)
+        .order("day_of_week");
+      if (error) throw error;
+      return data;
+    },
+    enabled: !!restaurant,
   });
 
   const { data: categories } = useQuery({
@@ -182,6 +225,8 @@ export default function RestaurantDetailScreen() {
     { id: UNCATEGORIZED_ID, name: "Other", sort_order: Number.MAX_SAFE_INTEGER, thumbnail_url: null },
   ];
   const selectedCategoryName = rail.find((category) => category.id === selectedCategoryId)?.name ?? "";
+  const addressLine = [restaurant.landmark, restaurant.address].filter(Boolean).join(", ");
+  const today = new Date().getDay();
 
   return (
     <ScreenContainer>
@@ -202,10 +247,25 @@ export default function RestaurantDetailScreen() {
               <Text className="font-inter-medium text-[10px] text-white">PURE VEG</Text>
             </View>
           ) : null}
+          <Pressable
+            onPress={() => setIsDetailsVisible(true)}
+            hitSlop={8}
+            className="h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white/15 active:opacity-70"
+          >
+            <Ionicons name="information-circle-outline" size={20} color="#FFFFFF" />
+          </Pressable>
         </View>
         <View className="pl-12">
           {restaurant.description ? (
             <Text className="font-sans text-sm text-white/70">{restaurant.description}</Text>
+          ) : null}
+          {addressLine ? (
+            <Pressable onPress={() => setIsDetailsVisible(true)} className="mt-1 flex-row items-center gap-1.5">
+              <Ionicons name="location-outline" size={13} color="rgba(255,255,255,0.7)" />
+              <Text numberOfLines={1} className="flex-1 font-sans text-xs text-white/70">
+                {addressLine}
+              </Text>
+            </Pressable>
           ) : null}
           <View
             className={`mt-2 flex-row items-center gap-1.5 self-start rounded-full px-2.5 py-1 ${
@@ -217,6 +277,105 @@ export default function RestaurantDetailScreen() {
           </View>
         </View>
       </View>
+
+      <Modal
+        visible={isDetailsVisible}
+        animationType="slide"
+        transparent
+        onRequestClose={() => setIsDetailsVisible(false)}
+      >
+        <Pressable
+          onPress={() => setIsDetailsVisible(false)}
+          className="flex-1 justify-end bg-black/40"
+        >
+          <Pressable className="max-h-[80%] rounded-t-3xl bg-card p-5" onPress={(event) => event.stopPropagation()}>
+            <View className="mb-3 flex-row items-center justify-between">
+              <Text className="font-headline text-xl text-primary">Restaurant Details</Text>
+              <Pressable onPress={() => setIsDetailsVisible(false)} hitSlop={8}>
+                <Ionicons name="close" size={22} color="#1D4626" />
+              </Pressable>
+            </View>
+            <ScrollView showsVerticalScrollIndicator={false}>
+              <Text className="font-headline-semibold text-lg text-primary">{restaurant.name}</Text>
+              {restaurant.description ? (
+                <Text className="mt-1 font-sans text-sm text-primary-dark">{restaurant.description}</Text>
+              ) : null}
+
+              {addressLine || restaurant.pincode ? (
+                <View className="mt-4 flex-row items-start gap-2.5">
+                  <Ionicons name="location-outline" size={16} color="#5A6357" style={{ marginTop: 2 }} />
+                  <Text className="flex-1 font-sans text-sm text-primary-dark">
+                    {[addressLine, restaurant.pincode].filter(Boolean).join(" - ")}
+                  </Text>
+                </View>
+              ) : null}
+
+              {restaurant.contact_phone ? (
+                <Pressable
+                  onPress={() => Linking.openURL(`tel:${restaurant.contact_phone}`)}
+                  className="mt-3 flex-row items-center gap-2.5"
+                >
+                  <Ionicons name="call-outline" size={16} color="#5A6357" />
+                  <Text className="font-sans text-sm text-primary underline">{restaurant.contact_phone}</Text>
+                </Pressable>
+              ) : null}
+
+              <Text className="mb-2 mt-5 font-headline-semibold text-sm text-primary">Opening Hours</Text>
+              {hours && hours.length > 0 ? (
+                DAY_LABELS.map((label, dayOfWeek) => {
+                  const row = hours.find((h) => h.day_of_week === dayOfWeek);
+                  const isToday = dayOfWeek === today;
+                  return (
+                    <View
+                      key={dayOfWeek}
+                      className={`flex-row items-center justify-between border-b border-border py-2 ${
+                        isToday ? "px-2 rounded-lg bg-veg/10" : ""
+                      }`}
+                    >
+                      <Text
+                        className={`font-sans text-sm ${isToday ? "font-headline-semibold text-veg" : "text-primary-dark"}`}
+                      >
+                        {label}
+                      </Text>
+                      <Text
+                        className={`font-sans text-sm ${isToday ? "font-headline-semibold text-veg" : "text-primary-dark"}`}
+                      >
+                        {row && !row.is_closed ? `${formatHour(row.open_time)} - ${formatHour(row.close_time)}` : "Closed"}
+                      </Text>
+                    </View>
+                  );
+                })
+              ) : (
+                <Text className="font-sans text-sm text-primary-dark">Hours not set yet.</Text>
+              )}
+            </ScrollView>
+          </Pressable>
+        </Pressable>
+      </Modal>
+
+      <Modal
+        visible={!!expandedBannerUrl}
+        animationType="fade"
+        transparent
+        onRequestClose={() => setExpandedBannerUrl(null)}
+      >
+        <Pressable onPress={() => setExpandedBannerUrl(null)} className="flex-1 items-center justify-center bg-black/90 px-4">
+          {expandedBannerUrl ? (
+            <Image
+              source={{ uri: expandedBannerUrl }}
+              style={{ width: "100%", aspectRatio: 3 }}
+              resizeMode="contain"
+            />
+          ) : null}
+          <Pressable
+            onPress={() => setExpandedBannerUrl(null)}
+            hitSlop={8}
+            className="absolute right-5 top-14 h-10 w-10 items-center justify-center rounded-full bg-white/15"
+          >
+            <Ionicons name="close" size={22} color="#FFFFFF" />
+          </Pressable>
+        </Pressable>
+      </Modal>
 
       <View className="flex-1 flex-row">
         {/* Left rail: categories only — no items, so this never waits on the
@@ -295,11 +454,18 @@ export default function RestaurantDetailScreen() {
                   showsHorizontalScrollIndicator={false}
                   contentContainerStyle={{ gap: 10, padding: 12 }}
                   renderItem={({ item: banner }) => (
-                    <Image
-                      source={{ uri: banner.image_url }}
-                      className="h-28 w-72 rounded-xl bg-background"
-                      resizeMode="cover"
-                    />
+                    // Sized to the exact 1200x400 (3:1) ratio the vendor
+                    // upload UI recommends, so "cover" fills the box without
+                    // cropping any of the banner's design off the sides —
+                    // a narrower box (the old h-28 w-72) was cutting edges.
+                    <Pressable onPress={() => setExpandedBannerUrl(banner.image_url)} className="active:opacity-90">
+                      <Image
+                        source={{ uri: banner.image_url }}
+                        style={{ height: 120, width: 360 }}
+                        className="rounded-xl bg-background"
+                        resizeMode="cover"
+                      />
+                    </Pressable>
                   )}
                 />
               ) : null}
