@@ -390,6 +390,12 @@ verify_jwt = false
 # Clerk JWT itself.
 verify_jwt = false
 
+[functions.platform-promo-presign]
+# Same gap as r2-presign above — verify_jwt off, function verifies the
+# Clerk JWT itself (and, unlike r2-presign, checks the superAdmin claim
+# rather than org ownership).
+verify_jwt = false
+
 [edge_runtime]
 enabled = true
 # Supported request policies: `oneshot`, `per_worker`.

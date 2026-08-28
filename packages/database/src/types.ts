@@ -182,6 +182,36 @@ export type Database = {
           },
         ]
       }
+      platform_banners: {
+        Row: {
+          created_at: string
+          id: string
+          is_active: boolean
+          media_type: Database["public"]["Enums"]["platform_banner_media_type"]
+          media_url: string
+          sort_order: number
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          media_type: Database["public"]["Enums"]["platform_banner_media_type"]
+          media_url: string
+          sort_order?: number
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          media_type?: Database["public"]["Enums"]["platform_banner_media_type"]
+          media_url?: string
+          sort_order?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
       profiles: {
         Row: {
           created_at: string
@@ -482,6 +512,7 @@ export type Database = {
       diet_preference: "pure_veg" | "veg_egg" | "everything"
       diet_type: "veg" | "egg" | "non_veg"
       gst_status: "registered" | "composition" | "unregistered"
+      platform_banner_media_type: "image" | "video" | "youtube"
       restaurant_status: "pending" | "approved" | "rejected" | "suspended"
     }
     CompositeTypes: {
@@ -616,6 +647,7 @@ export const Constants = {
       diet_preference: ["pure_veg", "veg_egg", "everything"],
       diet_type: ["veg", "egg", "non_veg"],
       gst_status: ["registered", "composition", "unregistered"],
+      platform_banner_media_type: ["image", "video", "youtube"],
       restaurant_status: ["pending", "approved", "rejected", "suspended"],
     },
   },

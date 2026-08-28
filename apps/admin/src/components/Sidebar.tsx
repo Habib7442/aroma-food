@@ -26,6 +26,16 @@ const NAV_ITEMS: { href: string; label: string; icon: ReactNode }[] = [
       </svg>
     ),
   },
+  {
+    href: "/promos",
+    label: "Promos",
+    icon: (
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.75} className="h-5 w-5">
+        <path strokeLinecap="round" strokeLinejoin="round" d="M3 9.75V14a1 1 0 0 0 1 1h3l4.5 4V4.75L7 8.75H4a1 1 0 0 0-1 1Z" />
+        <path strokeLinecap="round" strokeLinejoin="round" d="M17 8a5 5 0 0 1 0 8" />
+      </svg>
+    ),
+  },
 ];
 
 export function Sidebar({ children }: { children?: ReactNode }) {
