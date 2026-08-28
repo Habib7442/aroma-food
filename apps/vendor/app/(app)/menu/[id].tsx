@@ -6,16 +6,24 @@ import { router, useLocalSearchParams } from "expo-router";
 import { useEffect, useState } from "react";
 import { ActivityIndicator, Alert, Pressable, Switch, Text, TextInput, View } from "react-native";
 
+import { AvailabilityPicker } from "../../../components/AvailabilityPicker";
 import { Button } from "../../../components/Button";
 import { ImageSizeHint } from "../../../components/ImageSizeHint";
 import { PendingSetupNotice } from "../../../components/PendingSetupNotice";
 import { ScreenContainer } from "../../../components/ScreenContainer";
 import { TextField } from "../../../components/TextField";
 import { DIET_OPTIONS, GST_OPTIONS } from "../../../lib/dietOptions";
+import { describeAvailability, getAvailabilityStatus, isEffectivelyAvailable } from "../../../lib/availability";
 import { getImageSizeLabel, useImageUpload } from "../../../lib/useImageUpload";
 import { useCreateMenuCategory, useDeleteMenuCategory, useMenuCategories } from "../../../lib/useMenuCategories";
 import { useRestaurant } from "../../../lib/useRestaurant";
 import { useSupabase } from "../../../lib/supabase";
+
+const AVAILABILITY_BADGE_STYLES = {
+  live: { badge: "bg-emerald-50 border-emerald-300", text: "text-emerald-800" },
+  scheduled: { badge: "bg-amber-50 border-amber-300", text: "text-amber-800" },
+  paused: { badge: "bg-gray-100 border-gray-300", text: "text-gray-600" },
+} as const;
 
 export default function MenuItemScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -40,6 +48,8 @@ export default function MenuItemScreen() {
   const [priceRupees, setPriceRupees] = useState("");
   const [dietType, setDietType] = useState<DietType | null>(null);
   const [isAvailable, setIsAvailable] = useState(true);
+  const [unavailableUntil, setUnavailableUntil] = useState<string | null>(null);
+  const [isAvailabilityPickerVisible, setIsAvailabilityPickerVisible] = useState(false);
   const [categoryId, setCategoryId] = useState<string | null>(null);
   const [gstRateBps, setGstRateBps] = useState(500);
   const [packagingChargeRupees, setPackagingChargeRupees] = useState("0");
@@ -63,6 +73,7 @@ export default function MenuItemScreen() {
     setPriceRupees((existing.price_paise / 100).toString());
     setDietType(existing.diet_type);
     setIsAvailable(existing.is_available);
+    setUnavailableUntil(existing.unavailable_until);
     setCategoryId(existing.category_id);
     setGstRateBps(existing.gst_rate_bps);
     setPackagingChargeRupees((existing.packaging_charge_paise / 100).toString());
@@ -156,12 +167,13 @@ export default function MenuItemScreen() {
     mutationFn: async () => {
       if (!restaurantId) throw new Error("Restaurant record not ready. Please try again.");
       if (!dietType) throw new Error("Choose a diet type.");
-      const parsedRupees = Number(priceRupees);
-      if (!name.trim() || Number.isNaN(parsedRupees) || parsedRupees < 0) {
+      const trimmedPrice = priceRupees.trim();
+      const parsedRupees = Number(trimmedPrice);
+      if (!name.trim() || !trimmedPrice || !Number.isFinite(parsedRupees) || parsedRupees <= 0) {
         throw new Error("Enter a valid name and price.");
       }
-      const parsedPackagingRupees = Number(packagingChargeRupees);
-      if (Number.isNaN(parsedPackagingRupees) || parsedPackagingRupees < 0) {
+      const parsedPackagingRupees = Number(packagingChargeRupees.trim() || "0");
+      if (!Number.isFinite(parsedPackagingRupees) || parsedPackagingRupees < 0) {
         throw new Error("Enter a valid packaging charge.");
       }
       const pricePaise = rupeesToPaise(parsedRupees);
@@ -177,6 +189,7 @@ export default function MenuItemScreen() {
         price_paise: pricePaise,
         diet_type: dietType,
         is_available: isAvailable,
+        unavailable_until: unavailableUntil,
         category_id: categoryId,
         gst_rate_bps: gstRateBps,
         packaging_charge_paise: packagingChargePaise,
@@ -232,6 +245,21 @@ export default function MenuItemScreen() {
       setFormError(error instanceof Error ? error.message : "Couldn't delete this item.");
     },
   });
+
+  const onAvailabilitySwitchChange = (next: boolean) => {
+    if (next) {
+      setIsAvailable(true);
+      setUnavailableUntil(null);
+    } else {
+      setIsAvailabilityPickerVisible(true);
+    }
+  };
+
+  const onConfirmAvailabilityPause = (until: string | null) => {
+    setIsAvailabilityPickerVisible(false);
+    setIsAvailable(false);
+    setUnavailableUntil(until);
+  };
 
   const onDelete = () => {
     Alert.alert("Delete this dish?", `"${name}" will be removed from your menu. This can't be undone.`, [
@@ -522,7 +550,7 @@ export default function MenuItemScreen() {
               />
               <Text
                 className={`font-sans text-[10px] ${
-                  Number(packagingChargeRupees) * 100 > packagingCapPaise ? "text-non-veg" : "text-[#5A6357]"
+                  rupeesToPaise(Number(packagingChargeRupees) || 0) > packagingCapPaise ? "text-non-veg" : "text-[#5A6357]"
                 }`}
               >
                 Max {formatPaise(packagingCapPaise)} for this price
@@ -531,36 +559,43 @@ export default function MenuItemScreen() {
           </View>
 
           {/* Availability Toggle Box */}
-          <View className="flex-row items-center justify-between rounded-xl border border-border bg-background p-4">
-            <View className="flex-1 pr-3 gap-0.5">
-              <View className="flex-row items-center gap-2">
-                <Text className="font-rubik-semibold text-sm text-primary">Available on Menu</Text>
-                <View
-                  className={`rounded-full px-2 py-0.5 border ${
-                    isAvailable
-                      ? "bg-emerald-50 border-emerald-300"
-                      : "bg-gray-100 border-gray-300"
+          <View className="flex-row items-center justify-between rounded-xl border border-border bg-background p-4 gap-3">
+            <View className="flex-1 gap-1">
+              <Text className="font-rubik-semibold text-sm text-primary">Available on Menu</Text>
+              <View
+                className={`self-start rounded-full px-2 py-0.5 border ${
+                  AVAILABILITY_BADGE_STYLES[
+                    getAvailabilityStatus({ is_available: isAvailable, unavailable_until: unavailableUntil })
+                  ].badge
+                }`}
+              >
+                <Text
+                  className={`text-[10px] font-rubik-bold ${
+                    AVAILABILITY_BADGE_STYLES[
+                      getAvailabilityStatus({ is_available: isAvailable, unavailable_until: unavailableUntil })
+                    ].text
                   }`}
                 >
-                  <Text
-                    className={`text-[10px] font-rubik-bold ${
-                      isAvailable ? "text-emerald-800" : "text-gray-600"
-                    }`}
-                  >
-                    {isAvailable ? "LIVE" : "PAUSED"}
-                  </Text>
-                </View>
+                  {describeAvailability({ is_available: isAvailable, unavailable_until: unavailableUntil }).toUpperCase()}
+                </Text>
               </View>
               <Text className="font-sans text-xs text-[#5A6357]">
                 Customers can order this dish when turned on.
               </Text>
             </View>
             <Switch
-              value={isAvailable}
-              onValueChange={setIsAvailable}
+              value={isEffectivelyAvailable({ is_available: isAvailable, unavailable_until: unavailableUntil })}
+              onValueChange={onAvailabilitySwitchChange}
               trackColor={{ true: "#1D4626", false: "#D1D5DB" }}
             />
           </View>
+
+          <AvailabilityPicker
+            visible={isAvailabilityPickerVisible}
+            itemName={name || "This dish"}
+            onCancel={() => setIsAvailabilityPickerVisible(false)}
+            onConfirm={onConfirmAvailabilityPause}
+          />
 
           {formError ? (
             <View className="rounded-lg bg-red-50 p-3 border border-red-200">
