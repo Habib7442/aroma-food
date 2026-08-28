@@ -21,8 +21,8 @@ Several things in this project differ from common patterns, from `apps/vendor`, 
 | Fonts come from `packages/ui` (Rubik/SpaceMono), shared with the vendor app | **They are not shared.** `apps/vendor/AGENTS.md` §11 claims Rubik/SpaceMono are "shared with `apps/customer` when that app exists" — that has not happened. This app installs its own Google Fonts packages (`@expo-google-fonts/inter`, `@expo-google-fonts/plus-jakarta-sans`) directly. `@zaavo/ui` **is** a real dependency now, but only for the shared `Mark`/`Wordmark`/`WordmarkSmall` logo components (§10) — never for its fonts |
 | Prices as decimals / floats | **Integer paise.** ₹330.50 is `33050` |
 | A consumer app implies dense/utility design like the vendor app | **The opposite is deliberate.** `docs/DESIGN.md` and PRD §7.1 call out that this app is visually rich and food-photography-led where the vendor app is stripped down |
-| Cart, checkout, order tracking exist somewhere | **They still don't.** Auth and onboarding preference capture are built (see §3); browsing (home feed, restaurant detail) is unchanged; cart/checkout/orders remain a later slice |
-| No sign-out affordance needed | There's a **temporary** sign-out button in `(app)/home.tsx`'s header — there's no Profile tab yet to host one properly. Don't build it out further; replace it when a real account screen lands |
+| Checkout/order tracking exist somewhere | **They don't — but cart does.** `lib/useCart.ts` + `app/(app)/cart.tsx` are real (local Zustand state, no `orders` table involved — see §7/§9); checkout, payment, and order placement/tracking remain a later slice |
+| No sign-out affordance needed | The real Sign Out button lives on the Profile screen (`app/(app)/profile.tsx`) now. There is no sign-out anywhere in `home.tsx` anymore — an earlier temporary header button was removed when Profile was built |
 
 If the repo contradicts this file, say so instead of silently picking one.
 
@@ -73,15 +73,16 @@ What exists today, in full:
 - **The whole app requires sign-in** (mirroring `apps/vendor`, confirmed as the intended direction) — there is no anonymous browsing path anymore. Signed-out users land on `(auth)/sign-in`.
 - **Onboarding** (PRD §6.2): Diet (single-select: Pure Veg / Veg + Egg / Everything) then Cuisine (multi-select, minimum 2 to actively continue). Both screens are independently skippable; either path writes exactly one `user_preferences` row (see `app/(onboarding)/cuisines.tsx`) — a row existing at all, not its contents, is what stops onboarding from showing twice.
 - **Profile self-heal**: `lib/useProfile.ts`'s `useEnsureProfile()` upserts a `profiles` row, same interim-fix pattern as `apps/vendor`'s `useEnsureRestaurant()` — PRD §3.3's `user.created` webhook doesn't exist yet either. Fired from **both** `(onboarding)/_layout.tsx` and `(app)/_layout.tsx`, not just the latter: `user_preferences.user_id` has an FK to `profiles.id`, and a brand-new sign-up reaches onboarding (and writes a preferences row there) before `(app)` ever mounts. Dropping the onboarding call site would silently break preference-saving for every first-time sign-up.
-- Home screen (`app/(app)/home.tsx`) and restaurant detail (`app/(app)/restaurant/[id].tsx`) — mostly unchanged from slice 1 apart from their new path.
+- **Home screen** (`app/(app)/home.tsx`): a header (logo + a notification bell that's honest about not being built, `Alert.alert`), an inline search box (restaurant *and* dish name, via a second `menu_items` query), the promo carousel (§8), and the restaurant feed with pull-to-refresh — substantially built out since slice 1, not "unchanged apart from its path" anymore.
+- **Restaurant detail** (`app/(app)/restaurant/[id].tsx`): a category rail driving a lazily-fetched dish grid (only the selected category's items are fetched, not the whole menu at once), in-category search + diet filter, a restaurant-details bottom sheet (address/phone/hours), a full-screen promo-banner lightbox, and add-to-cart on every dish card (§7/§9's cart notes). Also substantially built out since slice 1.
 - **Bottom tab bar** (`app/(app)/_layout.tsx`, PRD §6.1's five tabs): Home, Profile, and Cart are real; Search and Orders are still `ComingSoonScreen` placeholders (`components/ComingSoonScreen.tsx`) — same convention as `apps/vendor`'s Orders tab, not fabricated functionality. `restaurant/[id]` is registered with `options={{ href: null }}` so it stays a pushed detail screen, not a sixth tab — see §6. Cart shows a `tabBarBadge` (total item count across the cart) sourced from `lib/useCart.ts`'s `useCartTotalItemCount()`.
 - **Profile screen** (`app/(app)/profile.tsx`): fetches and edits `profiles.name`/`profiles.phone` (the WhatsApp number, for future offer/campaign messaging — no separate `whatsapp` column, `phone` is reused), shows a profile-completion percentage (name set, phone set, `diet_preference` set, ≥1 cuisine — see `lib/useProfile.ts`'s `useProfileDetails`/`useSaveProfileDetails`/`usePreferencesDetails`), and hosts the real Sign Out button (moved here from the home banner's temporary one, which is gone).
 
 **Explicitly out of scope — do not build, do not create tables for, do not add UI for:**
 - Checkout, payments, Razorpay, COD, order placement — the cart itself is real (`lib/useCart.ts`, `app/(app)/cart.tsx`), but "Proceed to Checkout" is an honest `Alert.alert("Checkout isn't built yet...")`, not a working button. Building checkout means extending `packages/shared`'s pricing engine for per-item GST first (see the comment above the bill-summary block in `cart.tsx` for why the cart itself deliberately shows no GST line) — don't wire up a fake/simplified total to make the button "work"
 - Order tracking, order history, reorder, invoices — the Orders tab is a placeholder only
-- Search (restaurants or dishes) — the Search tab is a placeholder only
-- Cuisine chips, filter row (Veg Mode / rating / fast / offers), location pill, cart badge — all PRD §6.6 "Home" contents that have no implementation yet. The "promo banner carousel" item specifically has a static hardcoded placeholder (the full-bleed hero block at the top of `home.tsx`, §8) standing in for it — not a real carousel, no database backing; see §8 before treating it as more built than it is
+- The dedicated Search **tab** — still a placeholder. Don't confuse this with Home's own inline search box (`DebouncedSearchBox`, `home.tsx`), which is real and searches both restaurant names and dish names (`menu_items`) — that's a different, already-built thing
+- Cuisine chips, filter row (Veg Mode / rating / fast / offers), location pill — still no implementation. (Cart badge and the promo banner carousel **are** built now — see §8, don't assume this whole PRD §6.6 "Home" list is equally unbuilt just because some of it still is)
 - The hard-filter/soft-signal logic (PRD §6.3) — `user_preferences` is captured and stored, but nothing reads it back yet to actually filter or rank the home feed. Wiring that up is a separate request, not implied by the table existing.
 - Editing diet/cuisine preferences after onboarding, addresses, saved payment methods — the Profile screen covers name/WhatsApp number only, nothing more
 - Reviews, ratings, quality scores, recommendation scoring (PRD §6.5) — no reviews tables exist in the database at all
@@ -149,7 +150,7 @@ The whole app requires a signed-in session — mirroring `apps/vendor`'s pattern
 
 ## Route groups and the guard chain
 
-```
+```text
 app/index.tsx           -- pure redirect: signed out -> (auth), no prefs -> (onboarding), else -> (app)/home
 app/(auth)/              -- sign-up, sign-in, forgot-password. Layout redirects a signed-in user to "/"
 app/(onboarding)/        -- diet, cuisines. Layout requires a session AND no existing user_preferences row
@@ -172,20 +173,37 @@ A `user_preferences` row existing at all (regardless of contents — see §3) is
 
 Same database as `apps/vendor`. **These are the only tables that exist. Do not query anything else.**
 
-```
+```text
 profiles              id text PK (Clerk user id), name, phone
 user_preferences      user_id text PK (references profiles.id), diet_preference,
                       preferred_cuisine_ids uuid[]
 restaurants           id text PK (Clerk org id), name, description, cover_url,
-                      lat, lng, is_pure_veg, status, commission_rate_bps,
-                      gst_status, gstin, is_open
+                      logo_url, lat, lng, is_pure_veg, status, commission_rate_bps,
+                      gst_status, gstin, is_open, address, landmark, pincode,
+                      contact_phone, contact_email
 restaurant_staff      id, restaurant_id, user_id, role
+restaurant_hours      id, restaurant_id, day_of_week, is_closed, open_time, close_time
+restaurant_banners    id, restaurant_id, image_url, sort_order — a restaurant's OWN
+                      promo banners, distinct from platform_banners below
 cuisines              id, name, image_url, sort_order
 restaurant_cuisines   id, restaurant_id, cuisine_id
-menu_items            id, restaurant_id, name, description, image_url,
-                      price_paise, diet_type, gst_rate_bps, cuisine_ids[],
-                      is_healthy, is_available
+menu_categories       id, restaurant_id, name, sort_order, thumbnail_url
+menu_items            id, restaurant_id, category_id, name, description, image_url,
+                      thumbnail_url, price_paise, packaging_charge_paise, diet_type,
+                      gst_rate_bps, cuisine_ids[], is_healthy, is_available,
+                      unavailable_until (a scheduled "back in stock" time — see the
+                      effective-availability formula noted in §7's RLS section below)
+platform_banners      id, media_type ('image'/'video'/'youtube'), media_url,
+                      sort_order, is_active — admin-managed (apps/admin's Promos
+                      page), rendered by home.tsx's PromoCarousel; §8
 ```
+
+This list grew during this session (menu_categories, restaurant_hours,
+restaurant_banners, platform_banners, and several menu_items/restaurants
+columns were added after this file was first written) — if you're about to
+add a table/column that seems missing here, check the live schema
+(`packages/database/src/types.ts`, or a read-only query) before assuming it
+doesn't exist; this table can drift out of date again.
 
 Enums: `diet_type` (`veg`/`egg`/`non_veg` — per-dish), `diet_preference` (`pure_veg`/`veg_egg`/`everything` — a user's onboarding stance, a **separate enum from `diet_type`**, do not conflate them), `gst_status` (`registered`/`composition`/`unregistered`), `restaurant_status` (`pending`/`approved`/`rejected`/`suspended`).
 
@@ -199,9 +217,11 @@ Those two screens still use the plain anon client (§6), relying on the `to anon
 
 - `restaurants_select_public_approved` — only rows with `status = 'approved'`
 - `cuisines_select_public`, `restaurant_cuisines_select_public` — full read
-- `menu_items_select_public_available` — only rows with `is_available = true`
+- `menu_items_select_public_available` — rows where `is_available = true`, **or** `unavailable_until` has already passed (`unavailable_until <= now()`). A vendor can schedule a dish to come back automatically at a set time (apps/vendor's `AvailabilityPicker`) instead of only ever toggling it back on by hand — this policy (and every screen reading `menu_items`) has to apply that same "effectively available" formula, not a plain `is_available` check, or a dish whose scheduled time already passed would still be hidden
+- `restaurant_hours_select_public`, `restaurant_banners_select_public`, `menu_categories_select_public` — full read for an approved restaurant's own rows
+- `platform_banners_select_public` — rows where `is_active = true`
 
-These policies already do the filtering. The `.eq("is_available", true)` in `app/(app)/restaurant/[id].tsx` and the absence of a `status` filter in `app/(app)/home.tsx` (RLS handles it) are deliberate, not accidental — see the comments in both files before "fixing" what looks like a missing filter.
+These policies already do the filtering. The `.or(\`is_available.eq.true,unavailable_until.lte.${...}\`)` in `app/(app)/restaurant/[id].tsx` (mirroring the RLS policy's own formula — not a plain `.eq("is_available", true)` anymore) and the absence of a `status` filter in `app/(app)/home.tsx` (RLS handles it) are deliberate, not accidental — see the comments in both files before "fixing" what looks like a missing filter.
 
 Types are generated into `packages/database`. Regenerate with `npm run db:types` after any schema change; never hand-edit generated types.
 
@@ -213,11 +233,11 @@ Types are generated into `packages/database`. Regenerate with `npm run db:types`
 
 **`menu_items.image_url` is still not rendered anywhere.** Populated by vendors the same way, but `app/(app)/restaurant/[id].tsx`'s menu row doesn't select or display it yet. Real gap, not a deliberate decision — in-scope to close (existing column, no new backend work) if asked.
 
-**The top-of-home hero block in `home.tsx` is a hardcoded placeholder, not a real feature.** It's a full-bleed section (no side margins/rounding, deliberately — matches the reference layout) that also now hosts the logo, tagline, and sign-out button that used to be a separate plain-white header. It stands in for PRD §6.6's "promo banner carousel," which is really an admin-managed platform ad slot — there's no `platform_banners`-style table yet, and `apps/admin`'s current slice doesn't include banner management — see `apps/admin/AGENTS.md`'s out-of-scope list. Don't build a carousel, a database table, or any "admin-configurable" logic around this single static block without that groundwork existing first; swap the whole section out once it does, don't extend it in place.
+**The promo banner carousel is now real, not a placeholder.** `home.tsx` renders `components/PromoCarousel.tsx`, reading `platform_banners` (admin-managed via `apps/admin`'s Promos page — image, video file, or a YouTube link; not a restaurant's own banners, see `restaurant_banners` in §7). It's a standalone rounded card with pagination dots and auto-advance (4s... actually 10s, see the component), sitting below the header/search — earlier revisions tried overlaying it as a full-bleed background behind the header/search, which didn't work well once real (busy, self-contained) marketing graphics were uploaded; don't reintroduce that layout without a specific reason. Renders nothing at all when there are no active banners.
 
-**No pull-to-refresh, no pagination.** Both screens fetch once via TanStack Query's defaults. Fine at today's restaurant count; revisit if it's ever raised.
+**`menu_items.image_url` is still not rendered anywhere** (`thumbnail_url` is, everywhere a dish photo shows). Populated by vendors the same way as `thumbnail_url`, but nothing selects/displays the full-size `image_url`. Real gap, not a deliberate decision — in-scope to close if asked.
 
-**No real sign-out UI.** The button in `(app)/home.tsx`'s header is a stopgap so the auth flow is testable at all — there's no Profile tab to host it properly yet. Don't extend it with more account actions; replace it wholesale when a Profile screen lands.
+**Pull-to-refresh exists on Home, not on restaurant detail or anywhere else.** `home.tsx`'s `FlashList` has `refreshing`/`onRefresh`, invalidating both the restaurant feed and the promo banners query together. No pagination anywhere yet — fine at today's restaurant/menu count, revisit if it's ever raised.
 
 **Cuisine onboarding selections aren't read back anywhere.** `user_preferences` is written to, correctly and completely, but nothing in the home feed or restaurant detail queries it — PRD §6.3's hard-filter/soft-signal behaviour has no implementation. Don't assume the table being populated means the feature is "mostly done."
 
@@ -230,7 +250,8 @@ Types are generated into `packages/database`. Regenerate with `npm run db:types`
 - Never write inline `* 100` or `/ 100`. Use `formatPaise` from `@zaavo/shared` for display, as `app/(app)/restaurant/[id].tsx` already does for menu item prices.
 - Never use floats for currency anywhere, including intermediate values.
 - All money math lives in `packages/shared` and is never duplicated into an app. If a calculation is needed that isn't there, add it to `packages/shared` with a test — do not inline it in a component.
-- There is no cart or checkout yet, so no bill breakdown / GST / commission math belongs in this app today — that lands with Phase 4/checkout work, not before.
+- The cart exists (`lib/useCart.ts`, `app/(app)/cart.tsx`) but deliberately shows **no GST** — `packages/shared`'s `calculateOrderTotals` takes one flat order-wide GST rate, but `menu_items.gst_rate_bps` is per-item, so a mixed-rate cart can't be correctly expressed by that function as it stands. The cart's bill section is a plain sum of item subtotal + packaging charge (not proportional/BPS math, so it doesn't count as the kind of calculation that has to live in `packages/shared`) plus a "Taxes & delivery calculated at checkout" note. Extending the pricing engine for per-item GST is checkout work, not this app's current scope — don't hack a GST estimate into the cart screen to "finish" it.
+- Commission math (`calculateVendorPayout`) has no call site in this app at all — it's vendor/admin-facing, not customer-facing. Don't add it here.
 
 ---
 
@@ -271,17 +292,18 @@ Deliberately different from the vendor app's Rubik/SpaceMono (§0).
 
 `Mark`, `Wordmark`, `WordmarkSmall` — from `@zaavo/ui` (`packages/ui/logo.tsx`), hand-transcribed `react-native-svg` components from `zaavo-logo-assets/` at the repo root (that folder is the source of truth for the geometry; regenerate the components by hand from there if the mark ever changes, don't edit path data ad hoc). Every colour variant in that asset folder is the same geometry with a different single fill — so recolouring here is the `color` prop, never a different component or a new file.
 
-- `Mark` — icon only, used centered above the headline on all three `(auth)` screens.
-- `WordmarkSmall` — used in the `(app)/home.tsx` header and both `(onboarding)` screens' top-of-screen brand line. **Always use this, not `Wordmark`, below 280px wide** — `Wordmark` carries the fork/spoon cutout detail and the asset README is explicit that it fills in illegibly under that width. Nothing in this app currently renders wide enough to use `Wordmark`.
-- Default colour is the ink token (`#1D4626`); pass `color` only when placing it on a dark/green surface, which nothing here does yet.
+- `Mark` was the original icon-only choice for the three `(auth)` screens; **all three now use `Wordmark`** (the full logo with the fork/spoon cutout) at `height={44}`, an explicit, deliberate override of the width guidance below — the user asked for the detailed mark specifically, not the simplified one, even undersized. `home.tsx`'s header also uses `Wordmark` (`height={24}`, `color="#FAF8F5"` — white, since it sits on the dark green header bar).
+- `WordmarkSmall` is still used in both `(onboarding)` screens' top-of-screen brand line — that one wasn't revisited.
+- The width guidance itself still stands as the *default* rule for any *new* call site: `Wordmark` carries the fork/spoon cutout detail, and the asset README is explicit that it fills in illegibly under ~280px wide — prefer `WordmarkSmall` below that width unless there's a specific reason (matching the auth screens/home header) to accept the tradeoff.
+- Default colour is the ink token (`#1D4626`); pass `color` explicitly when placing it on a dark/green surface (as `home.tsx` does) or a light card (auth screens use the default ink, no `color` prop).
 
 ---
 
 # 11. Performance budget
 
 - Customer app download **under 25MB** (PRD §12) — more headroom than the vendor app's 15MB, but still a budget, not a suggestion.
-- `FlashList`, never `FlatList`, for any list.
-- Never `select('*')` — select the columns the screen renders, as both existing screens already do.
+- `FlashList`, never `FlatList`, for any list — the rule for *new* lists. `restaurant/[id].tsx`'s category rail/dish grid/banner carousel and `home.tsx`'s promo carousel all currently use plain `FlatList` (built before this rule was consistently enforced, or for cases needing a `FlatList`-only API like `getItemLayout`-driven `scrollToIndex`) — that's a pre-existing inconsistency, not something to silently "fix" as a drive-by while touching those files for something else. `cart.tsx`'s line-item list correctly uses `FlashList`.
+- Never `select('*')` — select the columns the screen renders. Every screen that queries Supabase does this.
 - Wrap reads in TanStack Query so revisiting a screen is a cache hit.
 - Check the bundle with `npx expo-atlas` when adding a dependency, especially a font or image-heavy one.
 
@@ -370,7 +392,7 @@ Do not say "it should work." Say what to tap and what to expect.
 
 # 16. When in doubt
 
-1. Keep it inside the current slice (§3) — this app has exactly seven screens today (three auth, two onboarding, two browsing); most requests that sound reasonable are actually the next slice.
+1. Keep it inside the current slice (§3) — this app has eleven routes today (three auth, two onboarding, six under `(app)`: home, search, orders, cart, profile, restaurant/[id]) but not all eleven are equally built — search and orders are still placeholders; see §3's out-of-scope list for what's real vs. not. Most requests that sound reasonable are actually the next slice.
 2. Read the actual file before describing a change to it.
 3. Check `docs/PRD.md` §6 for product rules; ask if it's silent.
 4. Prefer asking one focused question over guessing.
