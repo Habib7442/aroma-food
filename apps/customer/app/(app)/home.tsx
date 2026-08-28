@@ -4,7 +4,7 @@ import { FlashList } from "@shopify/flash-list";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "expo-router";
 import { useMemo, useState } from "react";
-import { ActivityIndicator, Image, Pressable, Text, View } from "react-native";
+import { ActivityIndicator, Alert, Image, Pressable, Text, View } from "react-native";
 
 import { DebouncedSearchBox } from "../../components/DebouncedSearchBox";
 import { PromoCarousel } from "../../components/PromoCarousel";
@@ -32,7 +32,6 @@ const CARD_TINTS = ["bg-primary/5", "bg-secondary/10", "bg-egg/10", "bg-veg/8"];
 export default function HomeScreen() {
   const { data: completion } = useProfileCompletion();
   const [searchQuery, setSearchQuery] = useState("");
-  const [pureVegOnly, setPureVegOnly] = useState(false);
 
   const { data: restaurants, isLoading, error } = useQuery({
     queryKey: ["restaurants", "feed"],
@@ -70,22 +69,21 @@ export default function HomeScreen() {
   });
   const dishMatchRestaurantIds = useMemo(() => new Set((dishMatches ?? []).map((m) => m.restaurant_id)), [dishMatches]);
 
-  // Search and pure-veg both filter the already-loaded feed client-side —
-  // the restaurant count here is small enough (single city) that a
-  // client-side pass beats a network round trip per keystroke/toggle.
-  // Open restaurants sort first; Array.sort is stable, so the underlying
-  // alphabetical order (from the query) is preserved within each group.
+  // Search filters the already-loaded feed client-side — the restaurant
+  // count here is small enough (single city) that a client-side pass beats
+  // a network round trip per keystroke. Open restaurants sort first;
+  // Array.sort is stable, so the underlying alphabetical order (from the
+  // query) is preserved within each group.
   const filteredRestaurants = useMemo(() => {
     if (!restaurants) return restaurants;
     const query = trimmedSearchQuery.toLowerCase();
     return restaurants
       .filter((restaurant) => {
-        if (pureVegOnly && !restaurant.is_pure_veg) return false;
         if (query && !restaurant.name.toLowerCase().includes(query) && !dishMatchRestaurantIds.has(restaurant.id)) return false;
         return true;
       })
       .sort((a, b) => Number(b.is_open) - Number(a.is_open));
-  }, [restaurants, trimmedSearchQuery, pureVegOnly, dishMatchRestaurantIds]);
+  }, [restaurants, trimmedSearchQuery, dishMatchRestaurantIds]);
 
   if (isLoading) {
     return (
@@ -99,33 +97,30 @@ export default function HomeScreen() {
 
   return (
     <ScreenContainer>
-      <View className="bg-primary px-5 pb-3 pt-4">
-        <Wordmark height={28} color="#FAF8F5" />
+      <View className="flex-row items-center justify-between bg-primary px-5 pb-3 pt-4">
+        <Wordmark height={24} color="#FAF8F5" />
+        <Pressable
+          onPress={() => Alert.alert("Notifications", "Nothing here yet — this is coming in a later update.")}
+          hitSlop={8}
+          className="h-9 w-9 items-center justify-center rounded-full bg-white/15"
+        >
+          <Ionicons name="notifications-outline" size={20} color="#FFFFFF" />
+          <View className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full border border-primary bg-non-veg" />
+        </Pressable>
+      </View>
+
+      <View className="border-b border-border pb-3 pt-3">
+        <DebouncedSearchBox placeholder="Search restaurants or dishes" onDebouncedChange={setSearchQuery} className="mx-5" />
       </View>
 
       {/* PRD §6.6's "promo banner carousel" — admin-managed via apps/admin's
           Promos page (platform_banners), distinct from a restaurant's own
-          banners. Renders nothing when there are no active promos, so a
-          fresh install isn't left with a blank strip here. */}
+          banners. A finished marketing graphic with its own logo/text baked
+          in, so it's its own rounded card (with pagination dots) rather
+          than a background other UI sits on top of. Renders nothing at all
+          when there are no active promos, so a fresh install isn't left
+          with a blank gap here. */}
       <PromoCarousel />
-
-      <View className="gap-2 border-b border-border pb-2 pt-3">
-        <DebouncedSearchBox
-          placeholder="Search restaurants or dishes"
-          onDebouncedChange={setSearchQuery}
-          className="mx-5"
-        />
-        <Pressable
-          onPress={() => setPureVegOnly((v) => !v)}
-          className={`ml-5 self-start rounded-full border px-3 py-1.5 ${
-            pureVegOnly ? "border-veg bg-veg/15" : "border-border bg-card"
-          }`}
-        >
-          <Text className={`text-xs ${pureVegOnly ? "font-headline-semibold text-veg" : "font-sans text-primary-dark"}`}>
-            🌱 Pure Veg
-          </Text>
-        </Pressable>
-      </View>
 
       {/* Nudge banner — same completion calc as app/(app)/profile.tsx's
           meter (lib/useProfile.ts's useProfileCompletion, shared so the two

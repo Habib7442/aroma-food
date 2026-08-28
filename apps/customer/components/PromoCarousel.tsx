@@ -1,8 +1,17 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useQuery } from "@tanstack/react-query";
 import { useVideoPlayer, VideoView } from "expo-video";
-import { useState } from "react";
-import { FlatList, Image, Linking, Modal, Pressable, View } from "react-native";
+import { useCallback, useState } from "react";
+import {
+  FlatList,
+  Image,
+  Linking,
+  Modal,
+  Pressable,
+  useWindowDimensions,
+  View,
+  type ViewToken,
+} from "react-native";
 
 import { supabase } from "../lib/supabase";
 
@@ -20,8 +29,8 @@ function youtubeThumbnail(url: string): string | null {
 }
 
 // A player instance is only created once a video is actually opened, not
-// one per carousel card — expo-video's decoder is real per-instance cost,
-// and the carousel itself never needs more than a static thumbnail.
+// one per slide — expo-video's decoder is real per-instance cost, and the
+// carousel itself never needs more than a static thumbnail.
 function VideoPlayerModal({ url, onClose }: { url: string; onClose: () => void }) {
   const player = useVideoPlayer(url, (p) => {
     p.play();
@@ -43,12 +52,20 @@ function VideoPlayerModal({ url, onClose }: { url: string; onClose: () => void }
   );
 }
 
-// Platform-wide promos (admin-managed, apps/admin's Promos page) — distinct
-// from a restaurant's own promo banners. Renders nothing at all when empty
-// rather than an empty carousel strip, so a fresh install with no promos
-// yet configured doesn't show a blank bar.
+const VIEWABILITY_CONFIG = { itemVisiblePercentThreshold: 60 };
+
+// Platform-wide promos (admin-managed, apps/admin's Promos page) — a
+// standalone rounded card carousel with its own pagination dots, sitting
+// below the header/search rather than behind them. These are finished
+// marketing graphics with their own logo/text baked in, so putting other
+// UI on top of one fights it for space instead of complementing it.
+// Renders nothing at all when there are no active banners.
 export function PromoCarousel() {
   const [expandedVideoUrl, setExpandedVideoUrl] = useState<string | null>(null);
+  const [activeIndex, setActiveIndex] = useState(0);
+  const { width: screenWidth } = useWindowDimensions();
+  const cardWidth = screenWidth - 40;
+  const cardHeight = cardWidth / 2.2;
 
   const { data: banners } = useQuery({
     queryKey: ["platform-banners", "public"],
@@ -61,51 +78,78 @@ export function PromoCarousel() {
     },
   });
 
+  const onViewableItemsChanged = useCallback(({ viewableItems }: { viewableItems: ViewToken[] }) => {
+    if (viewableItems[0]?.index != null) setActiveIndex(viewableItems[0].index);
+  }, []);
+
   if (!banners || banners.length === 0) return null;
 
   return (
-    <>
-      <FlatList
-        horizontal
-        data={banners}
-        keyExtractor={(banner) => banner.id}
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={{ gap: 10, padding: 12 }}
-        renderItem={({ item: banner }) => {
-          if (banner.media_type === "image") {
-            return (
-              <Image
-                source={{ uri: banner.media_url }}
-                style={{ height: 140, width: 320 }}
-                className="rounded-xl bg-background"
-                resizeMode="cover"
-              />
-            );
-          }
+    <View className="mt-3 gap-2">
+      <View style={{ height: cardHeight }}>
+        <FlatList
+          horizontal
+          pagingEnabled
+          data={banners}
+          keyExtractor={(banner) => banner.id}
+          showsHorizontalScrollIndicator={false}
+          snapToInterval={cardWidth + 12}
+          decelerationRate="fast"
+          contentContainerStyle={{ gap: 12, paddingHorizontal: 20 }}
+          onViewableItemsChanged={onViewableItemsChanged}
+          viewabilityConfig={VIEWABILITY_CONFIG}
+          renderItem={({ item: banner }) => {
+            if (banner.media_type === "image") {
+              return (
+                <Image
+                  source={{ uri: banner.media_url }}
+                  style={{ height: cardHeight, width: cardWidth }}
+                  className="rounded-2xl bg-background"
+                  resizeMode="cover"
+                />
+              );
+            }
 
-          // video and youtube both render as a thumbnail + play button —
-          // youtube opens externally (no in-app embed), video opens the
-          // in-app full-screen player above.
-          const thumbnail = banner.media_type === "youtube" ? youtubeThumbnail(banner.media_url) : null;
-          return (
-            <Pressable
-              onPress={() =>
-                banner.media_type === "youtube" ? Linking.openURL(banner.media_url) : setExpandedVideoUrl(banner.media_url)
-              }
-              style={{ height: 140, width: 320 }}
-              className="items-center justify-center overflow-hidden rounded-xl bg-primary-dark"
-            >
-              {thumbnail ? (
-                <Image source={{ uri: thumbnail }} style={{ width: "100%", height: "100%", position: "absolute" }} resizeMode="cover" />
-              ) : null}
-              <View className="h-14 w-14 items-center justify-center rounded-full bg-black/50">
-                <Ionicons name="play" size={26} color="#FFFFFF" />
-              </View>
-            </Pressable>
-          );
-        }}
-      />
+            // video and youtube both render as a thumbnail + play button —
+            // youtube opens externally (no in-app embed), video opens the
+            // in-app full-screen player above.
+            const thumbnail = banner.media_type === "youtube" ? youtubeThumbnail(banner.media_url) : null;
+            return (
+              <Pressable
+                onPress={() =>
+                  banner.media_type === "youtube" ? Linking.openURL(banner.media_url) : setExpandedVideoUrl(banner.media_url)
+                }
+                style={{ height: cardHeight, width: cardWidth }}
+                className="items-center justify-center overflow-hidden rounded-2xl bg-primary-dark"
+              >
+                {thumbnail ? (
+                  <Image
+                    source={{ uri: thumbnail }}
+                    style={{ width: "100%", height: "100%", position: "absolute" }}
+                    resizeMode="cover"
+                  />
+                ) : null}
+                <View className="h-14 w-14 items-center justify-center rounded-full bg-black/50">
+                  <Ionicons name="play" size={26} color="#FFFFFF" />
+                </View>
+              </Pressable>
+            );
+          }}
+        />
+      </View>
+
+      {banners.length > 1 ? (
+        <View className="flex-row items-center justify-center gap-1.5">
+          {banners.map((banner, index) => (
+            <View
+              key={banner.id}
+              className={`rounded-full ${index === activeIndex ? "h-1.5 w-4 bg-primary" : "h-1.5 w-1.5 bg-border"}`}
+            />
+          ))}
+        </View>
+      ) : null}
+
       {expandedVideoUrl ? <VideoPlayerModal url={expandedVideoUrl} onClose={() => setExpandedVideoUrl(null)} /> : null}
-    </>
+    </View>
   );
 }
