@@ -1,7 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useQuery } from "@tanstack/react-query";
 import { useVideoPlayer, VideoView } from "expo-video";
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   FlatList,
   Image,
@@ -66,6 +66,7 @@ export function PromoCarousel() {
   const { width: screenWidth } = useWindowDimensions();
   const cardWidth = screenWidth - 40;
   const cardHeight = cardWidth / 2.2;
+  const listRef = useRef<FlatList<PlatformBannerRow>>(null);
 
   const { data: banners } = useQuery({
     queryKey: ["platform-banners", "public"],
@@ -82,12 +83,31 @@ export function PromoCarousel() {
     if (viewableItems[0]?.index != null) setActiveIndex(viewableItems[0].index);
   }, []);
 
+  // Auto-advances every 4s, looping back to the first slide — the
+  // functional setState form (rather than reading activeIndex directly)
+  // keeps this effect's only dependency `bannerCount`, so a manual swipe
+  // (which also updates activeIndex, via onViewableItemsChanged above)
+  // doesn't restart the timer.
+  const bannerCount = banners?.length ?? 0;
+  useEffect(() => {
+    if (bannerCount <= 1) return;
+    const timer = setInterval(() => {
+      setActiveIndex((current) => {
+        const next = (current + 1) % bannerCount;
+        listRef.current?.scrollToIndex({ index: next, animated: true });
+        return next;
+      });
+    }, 4000);
+    return () => clearInterval(timer);
+  }, [bannerCount]);
+
   if (!banners || banners.length === 0) return null;
 
   return (
     <View className="mt-3 gap-2">
       <View style={{ height: cardHeight }}>
         <FlatList
+          ref={listRef}
           horizontal
           pagingEnabled
           data={banners}
@@ -98,6 +118,7 @@ export function PromoCarousel() {
           contentContainerStyle={{ gap: 12, paddingHorizontal: 20 }}
           onViewableItemsChanged={onViewableItemsChanged}
           viewabilityConfig={VIEWABILITY_CONFIG}
+          getItemLayout={(_, index) => ({ length: cardWidth + 12, offset: (cardWidth + 12) * index, index })}
           renderItem={({ item: banner }) => {
             if (banner.media_type === "image") {
               return (

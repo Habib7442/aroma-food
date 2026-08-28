@@ -1,7 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import { Wordmark } from "@zaavo/ui";
 import { FlashList } from "@shopify/flash-list";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "expo-router";
 import { useMemo, useState } from "react";
 import { ActivityIndicator, Alert, Image, Pressable, Text, View } from "react-native";
@@ -32,6 +32,8 @@ const CARD_TINTS = ["bg-primary/5", "bg-secondary/10", "bg-egg/10", "bg-veg/8"];
 export default function HomeScreen() {
   const { data: completion } = useProfileCompletion();
   const [searchQuery, setSearchQuery] = useState("");
+  const queryClient = useQueryClient();
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
   const { data: restaurants, isLoading, error } = useQuery({
     queryKey: ["restaurants", "feed"],
@@ -85,6 +87,20 @@ export default function HomeScreen() {
       .sort((a, b) => Number(b.is_open) - Number(a.is_open));
   }, [restaurants, trimmedSearchQuery, dishMatchRestaurantIds]);
 
+  // Pull-to-refresh re-fetches the restaurant feed and the promo carousel
+  // together — both are the kind of thing that can genuinely change between
+  // app opens (a new restaurant approved, a new admin promo), unlike the
+  // search-scoped dish-match query, which only matters while there's an
+  // active search.
+  const onRefresh = async () => {
+    setIsRefreshing(true);
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: ["restaurants", "feed"] }),
+      queryClient.invalidateQueries({ queryKey: ["platform-banners", "public"] }),
+    ]);
+    setIsRefreshing(false);
+  };
+
   if (isLoading) {
     return (
       <ScreenContainer>
@@ -105,7 +121,6 @@ export default function HomeScreen() {
           className="h-9 w-9 items-center justify-center rounded-full bg-white/15"
         >
           <Ionicons name="notifications-outline" size={20} color="#FFFFFF" />
-          <View className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full border border-primary bg-non-veg" />
         </Pressable>
       </View>
 
@@ -147,12 +162,14 @@ export default function HomeScreen() {
         <FlashList
           data={filteredRestaurants ?? []}
           keyExtractor={(item) => item.id}
+          refreshing={isRefreshing}
+          onRefresh={onRefresh}
           contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 24, paddingTop: 16 }}
           ItemSeparatorComponent={() => <View className="h-4" />}
           ListEmptyComponent={
             <View className="items-center py-16">
               <Text className="font-sans text-sm text-primary-dark">
-                {restaurants && restaurants.length > 0 ? "No restaurants match your search/filters." : "No restaurants yet."}
+                {restaurants && restaurants.length > 0 ? "No restaurants match your search." : "No restaurants yet."}
               </Text>
             </View>
           }
