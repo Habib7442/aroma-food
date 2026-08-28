@@ -3,8 +3,11 @@ import { Wordmark } from "@zaavo/ui";
 import { FlashList } from "@shopify/flash-list";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "expo-router";
+import { useMemo, useState } from "react";
 import { ActivityIndicator, Image, Pressable, Text, View } from "react-native";
 
+import { DebouncedSearchBox } from "../../components/DebouncedSearchBox";
+import { PromoCarousel } from "../../components/PromoCarousel";
 import { ScreenContainer } from "../../components/ScreenContainer";
 import { useProfileCompletion } from "../../lib/useProfile";
 import { supabase } from "../../lib/supabase";
@@ -28,6 +31,9 @@ const CARD_TINTS = ["bg-primary/5", "bg-secondary/10", "bg-egg/10", "bg-veg/8"];
 
 export default function HomeScreen() {
   const { data: completion } = useProfileCompletion();
+  const [searchQuery, setSearchQuery] = useState("");
+  const [pureVegOnly, setPureVegOnly] = useState(false);
+
   const { data: restaurants, isLoading, error } = useQuery({
     queryKey: ["restaurants", "feed"],
     queryFn: async (): Promise<RestaurantCard[]> => {
@@ -43,6 +49,44 @@ export default function HomeScreen() {
     },
   });
 
+  // "biryani" should surface a restaurant whose menu has a biryani dish,
+  // not just one named "Biryani House" — a name-only match on `restaurants`
+  // misses that entirely. menu_items_select_public_available already scopes
+  // this to approved restaurants and effectively-available dishes (RLS),
+  // same as the restaurants query above doesn't need to re-check `status`.
+  const trimmedSearchQuery = searchQuery.trim();
+  const { data: dishMatches } = useQuery({
+    queryKey: ["menu-items-search", "public", trimmedSearchQuery],
+    queryFn: async (): Promise<{ restaurant_id: string }[]> => {
+      const { data, error } = await supabase
+        .from("menu_items")
+        .select("restaurant_id")
+        .ilike("name", `%${trimmedSearchQuery}%`)
+        .limit(200);
+      if (error) throw error;
+      return data;
+    },
+    enabled: trimmedSearchQuery.length > 0,
+  });
+  const dishMatchRestaurantIds = useMemo(() => new Set((dishMatches ?? []).map((m) => m.restaurant_id)), [dishMatches]);
+
+  // Search and pure-veg both filter the already-loaded feed client-side —
+  // the restaurant count here is small enough (single city) that a
+  // client-side pass beats a network round trip per keystroke/toggle.
+  // Open restaurants sort first; Array.sort is stable, so the underlying
+  // alphabetical order (from the query) is preserved within each group.
+  const filteredRestaurants = useMemo(() => {
+    if (!restaurants) return restaurants;
+    const query = trimmedSearchQuery.toLowerCase();
+    return restaurants
+      .filter((restaurant) => {
+        if (pureVegOnly && !restaurant.is_pure_veg) return false;
+        if (query && !restaurant.name.toLowerCase().includes(query) && !dishMatchRestaurantIds.has(restaurant.id)) return false;
+        return true;
+      })
+      .sort((a, b) => Number(b.is_open) - Number(a.is_open));
+  }, [restaurants, trimmedSearchQuery, pureVegOnly, dishMatchRestaurantIds]);
+
   if (isLoading) {
     return (
       <ScreenContainer>
@@ -55,19 +99,33 @@ export default function HomeScreen() {
 
   return (
     <ScreenContainer>
-      {/* Full-bleed hero block — deliberately edge-to-edge, no side margins
-          or rounding (per the reference sketch): this stands in for PRD
-          §6.6's "promo banner carousel," which is really an admin-managed
-          platform ad slot. There's no platform_banners-style table and no
-          admin UI (apps/admin isn't scaffolded) to manage one yet, so this
-          is a single hardcoded block, not a carousel — swap the whole
-          section out once that groundwork exists, don't extend it in place. */}
-      <View className="bg-primary px-5 pb-5 pt-4">
+      <View className="bg-primary px-5 pb-3 pt-4">
         <Wordmark height={28} color="#FAF8F5" />
-        <Text className="mt-4 font-headline-semibold text-base text-white">Fresh flavors, delivered fast</Text>
       </View>
 
-      <View className="border-b border-border" />
+      {/* PRD §6.6's "promo banner carousel" — admin-managed via apps/admin's
+          Promos page (platform_banners), distinct from a restaurant's own
+          banners. Renders nothing when there are no active promos, so a
+          fresh install isn't left with a blank strip here. */}
+      <PromoCarousel />
+
+      <View className="gap-2 border-b border-border pb-2 pt-3">
+        <DebouncedSearchBox
+          placeholder="Search restaurants or dishes"
+          onDebouncedChange={setSearchQuery}
+          className="mx-5"
+        />
+        <Pressable
+          onPress={() => setPureVegOnly((v) => !v)}
+          className={`ml-5 self-start rounded-full border px-3 py-1.5 ${
+            pureVegOnly ? "border-veg bg-veg/15" : "border-border bg-card"
+          }`}
+        >
+          <Text className={`text-xs ${pureVegOnly ? "font-headline-semibold text-veg" : "font-sans text-primary-dark"}`}>
+            🌱 Pure Veg
+          </Text>
+        </Pressable>
+      </View>
 
       {/* Nudge banner — same completion calc as app/(app)/profile.tsx's
           meter (lib/useProfile.ts's useProfileCompletion, shared so the two
@@ -92,13 +150,15 @@ export default function HomeScreen() {
         </View>
       ) : (
         <FlashList
-          data={restaurants ?? []}
+          data={filteredRestaurants ?? []}
           keyExtractor={(item) => item.id}
           contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 24, paddingTop: 16 }}
           ItemSeparatorComponent={() => <View className="h-4" />}
           ListEmptyComponent={
             <View className="items-center py-16">
-              <Text className="font-sans text-sm text-primary-dark">No restaurants yet.</Text>
+              <Text className="font-sans text-sm text-primary-dark">
+                {restaurants && restaurants.length > 0 ? "No restaurants match your search/filters." : "No restaurants yet."}
+              </Text>
             </View>
           }
           renderItem={({ item, index }) => {
