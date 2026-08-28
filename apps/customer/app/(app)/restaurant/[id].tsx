@@ -3,12 +3,14 @@ import { Ionicons } from "@expo/vector-icons";
 import { useQuery } from "@tanstack/react-query";
 import { router, useLocalSearchParams } from "expo-router";
 import { useMemo, useState } from "react";
-import { ActivityIndicator, FlatList, Image, Linking, Modal, Pressable, ScrollView, Text, View } from "react-native";
+import { ActivityIndicator, Alert, FlatList, Image, Linking, Modal, Pressable, ScrollView, Text, View } from "react-native";
 
 import { DebouncedSearchBox } from "../../../components/DebouncedSearchBox";
 import { DietBadge } from "../../../components/DietBadge";
 import { DietFilterChips } from "../../../components/DietFilterChips";
+import { QuantityStepper } from "../../../components/QuantityStepper";
 import { ScreenContainer } from "../../../components/ScreenContainer";
+import { useCartItemQuantity, useCartStore } from "../../../lib/useCart";
 import { supabase } from "../../../lib/supabase";
 
 interface MenuItemRow {
@@ -16,6 +18,7 @@ interface MenuItemRow {
   name: string;
   description: string | null;
   price_paise: number;
+  packaging_charge_paise: number;
   diet_type: DietType;
   category_id: string | null;
   thumbnail_url: string | null;
@@ -59,6 +62,92 @@ function formatHour(time: string | null): string {
   const period = hour >= 12 ? "PM" : "AM";
   const twelveHour = hour % 12 === 0 ? 12 : hour % 12;
   return `${twelveHour}:${minuteStr} ${period}`;
+}
+
+// Its own component (not inlined in renderItem) because it needs
+// useCartItemQuantity — a hook, which only works from an actual component,
+// not a plain callback function called once per row.
+function MenuItemCard({
+  item,
+  restaurantId,
+  restaurantName,
+}: {
+  item: MenuItemRow;
+  restaurantId: string;
+  restaurantName: string;
+}) {
+  const quantity = useCartItemQuantity(item.id);
+  const addItem = useCartStore((state) => state.addItem);
+  const clearCartAndAddItem = useCartStore((state) => state.clearCartAndAddItem);
+  const incrementQuantity = useCartStore((state) => state.incrementQuantity);
+  const decrementQuantity = useCartStore((state) => state.decrementQuantity);
+
+  const cartItem = {
+    menuItemId: item.id,
+    name: item.name,
+    pricePaise: item.price_paise,
+    packagingChargePaise: item.packaging_charge_paise,
+    dietType: item.diet_type,
+    thumbnailUrl: item.thumbnail_url,
+  };
+
+  const onAdd = () => {
+    const result = addItem(restaurantId, restaurantName, cartItem);
+    if (result === "conflict") {
+      const currentRestaurantName = useCartStore.getState().restaurantName;
+      Alert.alert(
+        "Start a new cart?",
+        `Your cart has items from ${currentRestaurantName}. Clear the cart and add this item instead?`,
+        [
+          { text: "Cancel", style: "cancel" },
+          {
+            text: "Clear cart",
+            style: "destructive",
+            onPress: () => clearCartAndAddItem(restaurantId, restaurantName, cartItem),
+          },
+        ],
+      );
+    }
+  };
+
+  return (
+    <View className="min-w-0 flex-1 overflow-hidden rounded-2xl border border-border bg-card">
+      <View className="relative">
+        {item.thumbnail_url ? (
+          <Image source={{ uri: item.thumbnail_url }} className="aspect-square w-full bg-background" resizeMode="cover" />
+        ) : (
+          <View className="aspect-square w-full items-center justify-center bg-background">
+            <Ionicons name="restaurant-outline" size={28} color="#C1C9BE" />
+          </View>
+        )}
+        {quantity === 0 ? (
+          <Pressable
+            onPress={onAdd}
+            hitSlop={6}
+            className="absolute bottom-2 right-2 h-8 w-8 items-center justify-center rounded-full bg-veg active:opacity-80"
+          >
+            <Ionicons name="add" size={18} color="#FFFFFF" />
+          </Pressable>
+        ) : (
+          <View className="absolute bottom-2 right-2">
+            <QuantityStepper
+              quantity={quantity}
+              onIncrement={() => incrementQuantity(item.id)}
+              onDecrement={() => decrementQuantity(item.id)}
+              size="compact"
+            />
+          </View>
+        )}
+      </View>
+      <View className="gap-1 p-2.5">
+        <DietBadge dietType={item.diet_type} />
+        <Text numberOfLines={2} className="font-headline-semibold text-sm text-primary">
+          {item.name}
+        </Text>
+        <Text className="font-headline-semibold text-sm text-primary">{formatPaise(item.price_paise)}</Text>
+      </View>
+    </View>
+  );
 }
 
 export default function RestaurantDetailScreen() {
@@ -165,7 +254,7 @@ export default function RestaurantDetailScreen() {
       // even once the RLS policy itself already allows it through.
       let query = supabase
         .from("menu_items")
-        .select("id, name, description, price_paise, diet_type, category_id, thumbnail_url")
+        .select("id, name, description, price_paise, packaging_charge_paise, diet_type, category_id, thumbnail_url")
         .eq("restaurant_id", id)
         .or(`is_available.eq.true,unavailable_until.lte.${new Date().toISOString()}`);
       query = selectedCategoryId === UNCATEGORIZED_ID ? query.is("category_id", null) : query.eq("category_id", selectedCategoryId!);
@@ -505,22 +594,7 @@ export default function RestaurantDetailScreen() {
             )
           }
           renderItem={({ item }) => (
-            <View className="min-w-0 flex-1 overflow-hidden rounded-2xl border border-border bg-card">
-              {item.thumbnail_url ? (
-                <Image source={{ uri: item.thumbnail_url }} className="aspect-square w-full bg-background" resizeMode="cover" />
-              ) : (
-                <View className="aspect-square w-full items-center justify-center bg-background">
-                  <Ionicons name="restaurant-outline" size={28} color="#C1C9BE" />
-                </View>
-              )}
-              <View className="gap-1 p-2.5">
-                <DietBadge dietType={item.diet_type} />
-                <Text numberOfLines={2} className="font-headline-semibold text-sm text-primary">
-                  {item.name}
-                </Text>
-                <Text className="font-headline-semibold text-sm text-primary">{formatPaise(item.price_paise)}</Text>
-              </View>
-            </View>
+            <MenuItemCard item={item} restaurantId={restaurant.id} restaurantName={restaurant.name} />
           )}
         />
         </View>
