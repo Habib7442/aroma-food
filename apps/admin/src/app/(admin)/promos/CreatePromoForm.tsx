@@ -17,6 +17,49 @@ const MEDIA_TYPE_OPTIONS: { value: PlatformBannerMediaType; label: string }[] = 
 const MAX_IMAGE_BYTES = 2 * 1024 * 1024;
 const MAX_VIDEO_BYTES = 50 * 1024 * 1024;
 
+// Mirrors platform-promo-presign's ALLOWED_CONTENT_TYPES exactly — every
+// value here is something the Edge Function will actually accept.
+const MIME_BY_EXTENSION: Record<string, string> = {
+  jpg: "image/jpeg",
+  jpeg: "image/jpeg",
+  png: "image/png",
+  webp: "image/webp",
+  mp4: "video/mp4",
+  webm: "video/webm",
+  mov: "video/quicktime",
+};
+const ALLOWED_CONTENT_TYPES = new Set(Object.values(MIME_BY_EXTENSION));
+const DEFAULT_EXTENSION = { image: "jpg", video: "mp4" } as const;
+
+/**
+ * Resolves one {extension, contentType} pair used for BOTH the presign
+ * request and the actual PUT — they have to match exactly, or R2's
+ * signature check fails (Content-Type is a signed header). Previously
+ * `file.type` was reused for the PUT but the presign call could fall back
+ * to "application/octet-stream" server-side when it was empty — a value
+ * that isn't even in the allowlist above, so that fallback was always
+ * going to fail one way or another.
+ *
+ * Also never trusts the filename's raw suffix as a URL path segment — a
+ * duplicated file named e.g. "poster.jpg copy" has ".jpg copy" as its
+ * "extension", and the space in it makes platform-promo-presign's
+ * isValidPath reject the whole path. Only a sanitized, allowlisted
+ * extension is used.
+ */
+function resolveUpload(file: File, mediaType: "image" | "video"): { extension: string; contentType: string } {
+  const rawExtension = file.name.includes(".") ? (file.name.split(".").pop() ?? "") : "";
+  const sanitizedExtension = rawExtension.toLowerCase().replace(/[^a-z0-9]/g, "");
+
+  if (file.type && ALLOWED_CONTENT_TYPES.has(file.type)) {
+    return { extension: sanitizedExtension || DEFAULT_EXTENSION[mediaType], contentType: file.type };
+  }
+  if (sanitizedExtension && MIME_BY_EXTENSION[sanitizedExtension]) {
+    return { extension: sanitizedExtension, contentType: MIME_BY_EXTENSION[sanitizedExtension] };
+  }
+  const extension = DEFAULT_EXTENSION[mediaType];
+  return { extension, contentType: MIME_BY_EXTENSION[extension] };
+}
+
 export function CreatePromoForm() {
   // Remount-on-success (key bump) resets every field at once, including the
   // native file input — simpler and more reliable than trying to clear a
@@ -65,14 +108,14 @@ function PromoFormFields({ onSuccess }: { onSuccess: () => void }) {
         // see actions.ts's presignPromoUpload for why (Next.js Server
         // Actions cap request bodies, and this avoids raising that limit
         // just to re-upload a 50MB video through our own server).
-        const extension = file.name.includes(".") ? file.name.split(".").pop() : mediaType === "image" ? "jpg" : "mp4";
+        const { extension, contentType } = resolveUpload(file, mediaType);
         const path = `platform-promos/${mediaType}/${crypto.randomUUID()}.${extension}`;
-        const presigned = await presignPromoUpload([{ path, contentType: file.type }], "upload");
+        const presigned = await presignPromoUpload([{ path, contentType }], "upload");
         if (presigned.error || !presigned.results?.[0]) throw new Error(presigned.error ?? "Couldn't get an upload URL.");
 
         const uploadResponse = await fetch(presigned.results[0].url, {
           method: "PUT",
-          headers: { "Content-Type": file.type },
+          headers: { "Content-Type": contentType },
           body: file,
         });
         if (!uploadResponse.ok) throw new Error(`Upload failed (status ${uploadResponse.status}).`);
